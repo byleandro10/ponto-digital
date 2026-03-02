@@ -8,6 +8,7 @@ const Landing = lazy(() => import('./pages/Landing'));
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
 const PunchClock = lazy(() => import('./pages/employee/PunchClock'));
+const MyHistory = lazy(() => import('./pages/employee/MyHistory'));
 const Dashboard = lazy(() => import('./pages/admin/Dashboard'));
 const Employees = lazy(() => import('./pages/admin/Employees'));
 const Reports = lazy(() => import('./pages/admin/Reports'));
@@ -38,6 +39,7 @@ function AppRoutes() {
         <Route path="/login" element={signed ? <Navigate to={user?.type === 'admin' ? '/admin/dashboard' : '/employee/punch'} /> : <Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/employee/punch" element={<PrivateRoute type="employee"><PunchClock /></PrivateRoute>} />
+        <Route path="/employee/history" element={<PrivateRoute type="employee"><MyHistory /></PrivateRoute>} />
         <Route path="/admin/dashboard" element={<PrivateRoute type="admin"><Dashboard /></PrivateRoute>} />
         <Route path="/admin/employees" element={<PrivateRoute type="admin"><Employees /></PrivateRoute>} />
         <Route path="/admin/reports" element={<PrivateRoute type="admin"><Reports /></PrivateRoute>} />

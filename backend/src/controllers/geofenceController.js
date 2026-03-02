@@ -11,7 +11,9 @@ async function listGeofences(req, res) {
       where: { companyId: req.companyId },
       orderBy: { name: 'asc' }
     });
-    res.json({ geofences });
+    // Normaliza: expõe tanto "radius" quanto "radiusMeters" para compatibilidade
+    const normalized = geofences.map(f => ({ ...f, radiusMeters: f.radius }));
+    res.json({ geofences: normalized });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Erro ao listar cercas.' });
@@ -21,18 +23,23 @@ async function listGeofences(req, res) {
 /** Criar nova cerca */
 async function createGeofence(req, res) {
   try {
-    const { name, latitude, longitude, radius } = req.body;
-    if (!name || latitude == null || longitude == null || !radius) {
+    const { name, latitude, longitude } = req.body;
+    // Aceita tanto "radius" quanto "radiusMeters" para compatibilidade com frontend
+    const radius = req.body.radius ?? req.body.radiusMeters;
+    if (!name || latitude == null || longitude == null || radius == null) {
       return res.status(400).json({ error: 'Nome, latitude, longitude e raio são obrigatórios.' });
     }
-    if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+    const rad = parseInt(radius);
+    if (isNaN(lat) || isNaN(lng)) {
       return res.status(400).json({ error: 'Latitude e longitude devem ser números.' });
     }
-    if (radius < 10 || radius > 10000) {
+    if (rad < 10 || rad > 10000) {
       return res.status(400).json({ error: 'Raio deve ser entre 10 e 10.000 metros.' });
     }
     const geofence = await prisma.geofence.create({
-      data: { companyId: req.companyId, name: name.trim(), latitude, longitude, radius: parseInt(radius) }
+      data: { companyId: req.companyId, name: name.trim(), latitude: lat, longitude: lng, radius: rad }
     });
     res.status(201).json({ message: 'Cerca criada com sucesso!', geofence });
   } catch (error) {
@@ -49,13 +56,14 @@ async function updateGeofence(req, res) {
     });
     if (!fence) return res.status(404).json({ error: 'Cerca não encontrada.' });
 
-    const { name, latitude, longitude, radius, active } = req.body;
+    const { name, latitude, longitude, active } = req.body;
+    const radius = req.body.radius ?? req.body.radiusMeters;
     const updated = await prisma.geofence.update({
       where: { id: req.params.id },
       data: {
         ...(name && { name: name.trim() }),
-        ...(latitude != null && { latitude }),
-        ...(longitude != null && { longitude }),
+        ...(latitude != null && { latitude: parseFloat(latitude) }),
+        ...(longitude != null && { longitude: parseFloat(longitude) }),
         ...(radius != null && { radius: parseInt(radius) }),
         ...(active !== undefined && { active })
       }

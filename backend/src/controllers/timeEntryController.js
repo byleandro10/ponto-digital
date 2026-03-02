@@ -2,6 +2,7 @@ const prisma = require('../config/database');
 const dayjs = require('dayjs');
 const { checkGeofence } = require('../services/geofenceService');
 const { calculateWorkedHours, calculateOvertime } = require('../utils/calculateHours');
+const { startOfTodayBR, endOfTodayBR, formatBR, todayBR } = require('../utils/brazilTime');
 
 async function clockPunch(req, res) {
   try {
@@ -19,8 +20,8 @@ async function clockPunch(req, res) {
       return res.status(400).json({ error: 'Foto (selfie) é obrigatória para bater ponto.' });
     }
 
-    const today = dayjs().startOf('day').toDate();
-    const tomorrow = dayjs().endOf('day').toDate();
+    const today = startOfTodayBR();
+    const tomorrow = endOfTodayBR();
     const todayEntries = await prisma.timeEntry.findMany({
       where: { employeeId, timestamp: { gte: today, lte: tomorrow } },
       orderBy: { timestamp: 'asc' }
@@ -76,7 +77,7 @@ async function clockPunch(req, res) {
 
     const responseData = {
       message: `${typeLabels[type]} registrada com sucesso!`,
-      entry: { id: entry.id, type: entry.type, typeLabel: typeLabels[type], timestamp: entry.timestamp, latitude: entry.latitude, longitude: entry.longitude, address: entry.address }
+      entry: { id: entry.id, type: entry.type, typeLabel: typeLabels[type], timestamp: entry.timestamp, latitude: entry.latitude, longitude: entry.longitude, address: entry.address, time: formatBR(entry.timestamp, 'HH:mm:ss') }
     };
     if (insideGeofence === false) {
       responseData.warning = `Ponto registrado fora da cerca virtual "${geofenceName}".`;
@@ -91,8 +92,8 @@ async function clockPunch(req, res) {
 
 async function getTodayEntries(req, res) {
   try {
-    const today = dayjs().startOf('day').toDate();
-    const tomorrow = dayjs().endOf('day').toDate();
+    const today = startOfTodayBR();
+    const tomorrow = endOfTodayBR();
     const entries = await prisma.timeEntry.findMany({
       where: { employeeId: req.employeeId, timestamp: { gte: today, lte: tomorrow } },
       orderBy: { timestamp: 'asc' }
@@ -101,8 +102,8 @@ async function getTodayEntries(req, res) {
     const typeLabels = { CLOCK_IN: 'Entrada', BREAK_START: 'Saída para Almoço', BREAK_END: 'Volta do Almoço', CLOCK_OUT: 'Saída' };
     const nextPunch = getNextPunchType(entries);
     res.json({
-      date: dayjs().format('DD/MM/YYYY'),
-      entries: entries.map(e => ({ ...e, typeLabel: typeLabels[e.type], time: dayjs(e.timestamp).format('HH:mm:ss') })),
+      date: todayBR(),
+      entries: entries.map(e => ({ ...e, typeLabel: typeLabels[e.type], time: formatBR(e.timestamp, 'HH:mm:ss') })),
       nextPunch: nextPunch ? typeLabels[nextPunch] : 'Dia completo',
       isComplete: !nextPunch,
       hourBankBalance: emp?.hourBankBalance || 0
@@ -119,14 +120,20 @@ async function getHistory(req, res) {
     const employeeId = req.employeeId || req.params.employeeId;
     const where = { employeeId };
     if (startDate && endDate) {
-      where.timestamp = { gte: new Date(startDate), lte: new Date(endDate + 'T23:59:59') };
+      // Interpreta as datas no fuso de Brasília
+      where.timestamp = {
+        gte: new Date(startDate + 'T00:00:00-03:00'),
+        lte: new Date(endDate + 'T23:59:59.999-03:00')
+      };
     } else {
-      where.timestamp = { gte: dayjs().subtract(30, 'day').startOf('day').toDate(), lte: dayjs().endOf('day').toDate() };
+      const thirtyAgo = new Date();
+      thirtyAgo.setDate(thirtyAgo.getDate() - 30);
+      where.timestamp = { gte: thirtyAgo, lte: new Date() };
     }
     const entries = await prisma.timeEntry.findMany({ where, orderBy: { timestamp: 'asc' } });
     const grouped = {};
     entries.forEach(entry => {
-      const day = dayjs(entry.timestamp).format('YYYY-MM-DD');
+      const day = formatBR(entry.timestamp, 'YYYY-MM-DD');
       if (!grouped[day]) grouped[day] = [];
       grouped[day].push(entry);
     });
@@ -134,8 +141,8 @@ async function getHistory(req, res) {
     const days = Object.entries(grouped).map(([date, dayEntries]) => {
       const worked = calculateWorkedHours(dayEntries);
       return {
-        date: dayjs(date).format('DD/MM/YYYY'),
-        entries: dayEntries.map(e => ({ type: e.type, time: dayjs(e.timestamp).format('HH:mm:ss'), address: e.address })),
+        date: formatBR(new Date(date + 'T12:00:00-03:00'), 'DD/MM/YYYY'),
+        entries: dayEntries.map(e => ({ type: e.type, time: formatBR(e.timestamp, 'HH:mm:ss'), address: e.address })),
         totalWorked: worked.formatted
       };
     });
@@ -148,8 +155,8 @@ async function getHistory(req, res) {
 
 async function getAllTodayEntries(req, res) {
   try {
-    const today = dayjs().startOf('day').toDate();
-    const tomorrow = dayjs().endOf('day').toDate();
+    const today = startOfTodayBR();
+    const tomorrow = endOfTodayBR();
     const employees = await prisma.employee.findMany({
       where: { companyId: req.companyId, active: true },
       include: { timeEntries: { where: { timestamp: { gte: today, lte: tomorrow } }, orderBy: { timestamp: 'asc' } } },
@@ -160,11 +167,11 @@ async function getAllTodayEntries(req, res) {
       const status = getEmployeeStatus(entries);
       return {
         id: emp.id, name: emp.name, position: emp.position, department: emp.department, status,
-        entries: entries.map(e => ({ type: e.type, time: dayjs(e.timestamp).format('HH:mm:ss') }))
+        entries: entries.map(e => ({ type: e.type, time: formatBR(e.timestamp, 'HH:mm:ss') }))
       };
     });
     res.json({
-      date: dayjs().format('DD/MM/YYYY'),
+      date: todayBR(),
       employees: summary,
       stats: {
         total: employees.length,

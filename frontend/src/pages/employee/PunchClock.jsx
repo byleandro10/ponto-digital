@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import 'dayjs/locale/pt-br';
-import { FiClock, FiMapPin, FiCheckCircle, FiLogOut, FiCamera, FiAlertTriangle } from 'react-icons/fi';
+import { FiClock, FiMapPin, FiCheckCircle, FiLogOut, FiCamera, FiAlertTriangle, FiList } from 'react-icons/fi';
 import SelfieCapture from '../../components/SelfieCapture';
 
 dayjs.locale('pt-br');
@@ -111,6 +112,14 @@ export default function PunchClock() {
           <p className="text-xs text-gray-500">{user?.company?.name}</p>
         </div>
         <div className="flex items-center gap-3">
+          <Link
+            to="/employee/history"
+            className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800"
+            title="Meu Histórico"
+          >
+            <FiList className="w-4 h-4" />
+            <span className="hidden sm:inline">Histórico</span>
+          </Link>
           <span className="text-sm text-gray-600">{user?.name}</span>
           <button onClick={logout} className="text-gray-400 hover:text-red-500"><FiLogOut /></button>
         </div>

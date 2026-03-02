@@ -4,7 +4,8 @@ const { authMiddleware, employeeAuth } = require('../middlewares/auth');
 const { clockPunch, getTodayEntries, getHistory, getAllTodayEntries } = require('../controllers/timeEntryController');
 router.post('/punch', employeeAuth, clockPunch);
 router.get('/today', employeeAuth, getTodayEntries);
-router.get('/history', employeeAuth, getHistory);
+router.get('/history', employeeAuth, getHistory);          // funcionário vê seu histórico
+router.get('/my-history', employeeAuth, getHistory);       // alias explícito para portal do funcionário
 router.get('/all-today', authMiddleware, getAllTodayEntries);
 router.get('/employee/:employeeId/history', authMiddleware, getHistory);
 module.exports = router;
