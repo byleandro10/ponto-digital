@@ -212,9 +212,18 @@ export default function PunchClock() {
       />
 
       <header className="bg-white shadow-sm px-4 py-3 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-bold text-gray-800">Ponto Digital</h1>
-          <p className="text-xs text-gray-500">{user?.company?.name}</p>
+        <div className="flex items-center gap-3">
+          {user?.company?.logoUrl ? (
+            <img
+              src={user.company.logoUrl}
+              alt={user.company.name}
+              className="w-8 h-8 rounded-lg object-contain"
+            />
+          ) : null}
+          <div>
+            <h1 className="text-lg font-bold text-gray-800">Ponto Digital</h1>
+            <p className="text-xs text-gray-500">{user?.company?.name}</p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <Link

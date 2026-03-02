@@ -32,9 +32,17 @@ function Sidebar({ open, onClose, user, logout }) {
         {/* Logo */}
         <div className="flex items-center justify-between px-5 py-5 border-b border-gray-100">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center shadow-sm">
-              <FiClock className="w-5 h-5 text-white" />
-            </div>
+            {user?.company?.logoUrl ? (
+              <img
+                src={user.company.logoUrl}
+                alt={user.company.name}
+                className="w-9 h-9 rounded-xl object-contain bg-gray-50 border border-gray-100"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center shadow-sm">
+                <FiClock className="w-5 h-5 text-white" />
+              </div>
+            )}
             <div>
               <p className="font-bold text-gray-900 text-sm leading-tight">Ponto Digital</p>
               <p className="text-xs text-gray-400 truncate max-w-[120px]">{user?.company?.name}</p>

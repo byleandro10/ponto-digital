@@ -47,8 +47,18 @@ export function AuthProvider({ children }) {
     setUser(null);
   }
 
+  /** Atualiza a logoUrl da empresa no contexto/localStorage sem novo login */
+  function updateCompanyLogo(logoUrl) {
+    setUser(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, company: { ...prev.company, logoUrl } };
+      localStorage.setItem('user', JSON.stringify(updated));
+      return updated;
+    });
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, signed: !!user, loginAdmin, loginEmployee, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, signed: !!user, loginAdmin, loginEmployee, register, logout, updateCompanyLogo }}>
       {children}
     </AuthContext.Provider>
   );

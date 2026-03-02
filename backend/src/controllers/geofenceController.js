@@ -120,7 +120,7 @@ async function getCompanyConfig(req, res) {
   try {
     const company = await prisma.company.findUnique({
       where: { id: req.companyId },
-      select: { geofenceMode: true, requireSelfie: true, name: true, cnpj: true, address: true }
+      select: { geofenceMode: true, requireSelfie: true, name: true, cnpj: true, address: true, logoUrl: true }
     });
     res.json({ config: company });
   } catch (error) {
@@ -129,4 +129,47 @@ async function getCompanyConfig(req, res) {
   }
 }
 
-module.exports = { listGeofences, createGeofence, updateGeofence, deleteGeofence, updateGeofenceConfig, getCompanyConfig };
+/** Upload/atualizar logo da empresa (Base64) */
+async function uploadCompanyLogo(req, res) {
+  try {
+    const { logoBase64 } = req.body;
+    if (!logoBase64) return res.status(400).json({ error: 'Imagem não fornecida.' });
+
+    // Valida que é um data URL de imagem
+    if (!logoBase64.startsWith('data:image/')) {
+      return res.status(400).json({ error: 'Formato inválido. Envie uma imagem (PNG, JPG, SVG, WEBP).' });
+    }
+
+    // Limita tamanho: ~800 KB em base64 ≈ ~600 KB de imagem
+    const sizeBytes = Buffer.byteLength(logoBase64, 'utf8');
+    if (sizeBytes > 800_000) {
+      return res.status(400).json({ error: 'Imagem muito grande. Máximo 600 KB.' });
+    }
+
+    const company = await prisma.company.update({
+      where: { id: req.companyId },
+      data: { logoUrl: logoBase64 },
+      select: { logoUrl: true, name: true }
+    });
+    res.json({ message: 'Logo atualizada com sucesso!', logoUrl: company.logoUrl });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro ao salvar logo.' });
+  }
+}
+
+/** Remover logo da empresa */
+async function removeCompanyLogo(req, res) {
+  try {
+    await prisma.company.update({
+      where: { id: req.companyId },
+      data: { logoUrl: null }
+    });
+    res.json({ message: 'Logo removida com sucesso.' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro ao remover logo.' });
+  }
+}
+
+module.exports = { listGeofences, createGeofence, updateGeofence, deleteGeofence, updateGeofenceConfig, getCompanyConfig, uploadCompanyLogo, removeCompanyLogo };

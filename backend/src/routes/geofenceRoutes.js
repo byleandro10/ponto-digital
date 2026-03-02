@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authMiddleware, employeeAuth } = require('../middlewares/auth');
 const { roleGuard } = require('../middlewares/roleGuard');
-const { listGeofences, createGeofence, updateGeofence, deleteGeofence, updateGeofenceConfig, getCompanyConfig } = require('../controllers/geofenceController');
+const { listGeofences, createGeofence, updateGeofence, deleteGeofence, updateGeofenceConfig, getCompanyConfig, uploadCompanyLogo, removeCompanyLogo } = require('../controllers/geofenceController');
 
 // /config pode ser acessada por admin OU funcionário autenticado
 function flexAuth(req, res, next) {
@@ -26,6 +26,8 @@ function flexAuth(req, res, next) {
 
 router.get('/config', flexAuth, getCompanyConfig);
 router.put('/config', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), updateGeofenceConfig);
+router.put('/logo', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), uploadCompanyLogo);
+router.delete('/logo', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), removeCompanyLogo);
 router.get('/', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN', 'MANAGER'), listGeofences);
 router.post('/', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), createGeofence);
 router.put('/:id', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), updateGeofence);

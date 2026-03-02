@@ -1,13 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
-import { FiSave, FiCamera, FiMapPin, FiLock, FiEye, FiEyeOff, FiX } from 'react-icons/fi';
+import { FiSave, FiCamera, FiMapPin, FiLock, FiEye, FiEyeOff, FiX, FiImage, FiTrash2, FiUpload } from 'react-icons/fi';
 import AdminLayout from '../../components/AdminLayout';
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function Settings() {
+  const { user, updateCompanyLogo } = useAuth();
   const [config, setConfig] = useState({ requireSelfie: false, geofenceMode: 'off' });
   const [loading, setLoading] = useState(true);
+
+  // Estado do logo
+  const [logoPreview, setLogoPreview] = useState(null);
+  const [logoLoading, setLogoLoading] = useState(false);
+  const logoInputRef = useRef(null);
 
   // Estado do modal de alterar senha
   const [showPwdModal, setShowPwdModal] = useState(false);
@@ -18,6 +25,11 @@ export default function Settings() {
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => { fetchConfig(); }, []);
+
+  useEffect(() => {
+    // Carrega preview da logo atual salva no contexto
+    if (user?.company?.logoUrl) setLogoPreview(user.company.logoUrl);
+  }, [user?.company?.logoUrl]);
 
   async function fetchConfig() {
     try {
@@ -37,6 +49,49 @@ export default function Settings() {
       toast.success('Configurações salvas!');
     } catch (error) {
       toast.error(error.response?.data?.error || 'Erro ao salvar');
+    }
+  }
+
+  function onLogoFileChange(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      return toast.error('Selecione um arquivo de imagem (PNG, JPG, SVG, WEBP).');
+    }
+    if (file.size > 600_000) {
+      return toast.error('Imagem muito grande. Máximo 600 KB.');
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => setLogoPreview(ev.target.result);
+    reader.readAsDataURL(file);
+  }
+
+  async function handleUploadLogo() {
+    if (!logoPreview || logoPreview === user?.company?.logoUrl) return;
+    setLogoLoading(true);
+    try {
+      const res = await api.put('/geofences/logo', { logoBase64: logoPreview });
+      updateCompanyLogo(res.data.logoUrl);
+      toast.success('Logo salva com sucesso!');
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Erro ao salvar logo');
+    } finally {
+      setLogoLoading(false);
+    }
+  }
+
+  async function handleRemoveLogo() {
+    setLogoLoading(true);
+    try {
+      await api.delete('/geofences/logo');
+      updateCompanyLogo(null);
+      setLogoPreview(null);
+      if (logoInputRef.current) logoInputRef.current.value = '';
+      toast.success('Logo removida.');
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Erro ao remover logo');
+    } finally {
+      setLogoLoading(false);
     }
   }
 
@@ -136,6 +191,73 @@ export default function Settings() {
           <p className="text-xs text-gray-400 mt-3">
             Configure as cercas em <Link to="/admin/geofences" className="text-blue-500 underline">Cercas Virtuais</Link>
           </p>
+        </div>
+
+        {/* Logomarca da Empresa */}
+        <div className="bg-white rounded-xl shadow p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="bg-indigo-100 p-2 rounded-lg"><FiImage className="w-5 h-5 text-indigo-600" /></div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-800">Logomarca da Empresa</h2>
+              <p className="text-sm text-gray-500">Aparece no sidebar e na tela de ponto dos funcionários</p>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-start gap-5">
+            {/* Preview */}
+            <div
+              className="w-28 h-28 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden cursor-pointer hover:border-indigo-400 transition flex-shrink-0"
+              onClick={() => logoInputRef.current?.click()}
+              title="Clique para selecionar imagem"
+            >
+              {logoPreview ? (
+                <img src={logoPreview} alt="Logo" className="w-full h-full object-contain p-2" />
+              ) : (
+                <div className="flex flex-col items-center gap-1 text-gray-300">
+                  <FiImage className="w-8 h-8" />
+                  <span className="text-xs">Sem logo</span>
+                </div>
+              )}
+            </div>
+
+            {/* Ações */}
+            <div className="flex flex-col gap-2 flex-1">
+              <p className="text-xs text-gray-400 mb-1">PNG, JPG, SVG ou WEBP • Máx. 600 KB • Recomendado: 200×200px</p>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/*"
+                onChange={onLogoFileChange}
+                className="hidden"
+              />
+              <button
+                onClick={() => logoInputRef.current?.click()}
+                className="flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium px-4 py-2 rounded-lg transition text-sm w-fit"
+              >
+                <FiUpload className="w-4 h-4" /> Selecionar imagem
+              </button>
+
+              {logoPreview && logoPreview !== user?.company?.logoUrl && (
+                <button
+                  onClick={handleUploadLogo}
+                  disabled={logoLoading}
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2 rounded-lg transition text-sm w-fit disabled:opacity-50"
+                >
+                  <FiSave className="w-4 h-4" /> {logoLoading ? 'Salvando...' : 'Salvar logo'}
+                </button>
+              )}
+
+              {user?.company?.logoUrl && (
+                <button
+                  onClick={handleRemoveLogo}
+                  disabled={logoLoading}
+                  className="flex items-center gap-2 text-red-500 hover:text-red-700 text-sm font-medium px-2 py-1 w-fit transition disabled:opacity-50"
+                >
+                  <FiTrash2 className="w-4 h-4" /> Remover logo
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Segurança — Alterar Senha */}
