@@ -25,6 +25,7 @@ export default function PunchClock() {
   const [requireSelfie, setRequireSelfie] = useState(false);
   const [hourBankBalance, setHourBankBalance] = useState(null);
   const [geoWarning, setGeoWarning] = useState(null);
+  const [workScheduleType, setWorkScheduleType] = useState('standard');
 
   // Estado do modal de alterar senha
   const [showPwdModal, setShowPwdModal] = useState(false);
@@ -64,6 +65,7 @@ export default function PunchClock() {
       setTodayEntries(response.data.entries);
       setNextPunch(response.data.nextPunch);
       setIsComplete(response.data.isComplete);
+      if (response.data.workScheduleType) setWorkScheduleType(response.data.workScheduleType);
       if (response.data.hourBankBalance !== undefined) {
         setHourBankBalance(response.data.hourBankBalance);
       }
@@ -250,7 +252,7 @@ export default function PunchClock() {
         <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
           <p className="text-gray-500 text-sm capitalize">{currentTime.format('dddd, DD [de] MMMM [de] YYYY')}</p>
           <p className="text-6xl font-bold text-gray-800 mt-2 font-mono">{currentTime.format('HH:mm:ss')}</p>
-          <div className="flex items-center justify-center gap-4 mt-3">
+          <div className="flex items-center justify-center flex-wrap gap-3 mt-3">
             {location && (
               <div className="flex items-center gap-1 text-xs text-green-600">
                 <FiMapPin className="w-3 h-3" /><span>Localização capturada</span>
@@ -259,6 +261,12 @@ export default function PunchClock() {
             {requireSelfie && (
               <div className="flex items-center gap-1 text-xs text-blue-600">
                 <FiCamera className="w-3 h-3" /><span>Selfie obrigatória</span>
+              </div>
+            )}
+            {workScheduleType !== 'standard' && (
+              <div className="flex items-center gap-1 text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
+                <FiClock className="w-3 h-3" />
+                <span>{workScheduleType === 'no_break' ? 'Sem intervalo' : 'Escala'}</span>
               </div>
             )}
           </div>

@@ -53,6 +53,16 @@ model Employee {
   companyId     String
   active        Boolean  @default(true)
   hourBankBalance Int    @default(0) // saldo banco de horas em minutos (+ ou -)
+
+  // Tipo de jornada:
+  //   standard   → entrada / almoço-saída / almoço-volta / saída (padrão CLT)
+  //   no_break   → entrada / saída (sem intervalo de almoço)
+  //   shift      → escala — múltiplos registros livres; apenas CLOCK_IN e CLOCK_OUT
+  workScheduleType String @default("standard") // standard | no_break | shift
+
+  // Isenção de cerca virtual (trabalha externamente — pode bater mesmo com modo "block")
+  geofenceExempt Boolean @default(false)
+
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

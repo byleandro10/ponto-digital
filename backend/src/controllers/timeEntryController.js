@@ -26,13 +26,30 @@ async function clockPunch(req, res) {
       where: { employeeId, timestamp: { gte: today, lte: tomorrow } },
       orderBy: { timestamp: 'asc' }
     });
+
+    // Determina próximo tipo com base na jornada do funcionário
     let type;
     const types = todayEntries.map(e => e.type);
-    if (!types.includes('CLOCK_IN')) type = 'CLOCK_IN';
-    else if (!types.includes('BREAK_START')) type = 'BREAK_START';
-    else if (!types.includes('BREAK_END')) type = 'BREAK_END';
-    else if (!types.includes('CLOCK_OUT')) type = 'CLOCK_OUT';
-    else return res.status(400).json({ error: 'Todos os pontos do dia já foram registrados.', entries: todayEntries });
+    const schedule = employee.workScheduleType || 'standard';
+
+    if (schedule === 'no_break') {
+      // Jornada sem intervalo: apenas CLOCK_IN → CLOCK_OUT
+      if (!types.includes('CLOCK_IN')) type = 'CLOCK_IN';
+      else if (!types.includes('CLOCK_OUT')) type = 'CLOCK_OUT';
+      else return res.status(400).json({ error: 'Todos os pontos do dia já foram registrados.' });
+    } else if (schedule === 'shift') {
+      // Escala: pares CLOCK_IN / CLOCK_OUT ilimitados (ex: 12x36)
+      const lastEntry = todayEntries[todayEntries.length - 1];
+      if (!lastEntry || lastEntry.type === 'CLOCK_OUT') type = 'CLOCK_IN';
+      else type = 'CLOCK_OUT';
+    } else {
+      // standard: CLOCK_IN → BREAK_START → BREAK_END → CLOCK_OUT
+      if (!types.includes('CLOCK_IN')) type = 'CLOCK_IN';
+      else if (!types.includes('BREAK_START')) type = 'BREAK_START';
+      else if (!types.includes('BREAK_END')) type = 'BREAK_END';
+      else if (!types.includes('CLOCK_OUT')) type = 'CLOCK_OUT';
+      else return res.status(400).json({ error: 'Todos os pontos do dia já foram registrados.', entries: todayEntries });
+    }
 
     // Geofencing
     let insideGeofence = null;
@@ -46,7 +63,8 @@ async function clockPunch(req, res) {
         insideGeofence = geoResult.inside;
         geofenceName = geoResult.fence?.name || null;
 
-        if (employee.company.geofenceMode === 'block' && geoResult.inside === false) {
+        // Bloqueia apenas se: modo=block E fora da cerca E funcionário NÃO é isento
+        if (employee.company.geofenceMode === 'block' && geoResult.inside === false && !employee.geofenceExempt) {
           return res.status(403).json({
             error: `Você está fora da área permitida (${geoResult.distance}m da cerca "${geoResult.fence?.name}"). Ponto bloqueado.`,
             distance: geoResult.distance,
@@ -98,14 +116,19 @@ async function getTodayEntries(req, res) {
       where: { employeeId: req.employeeId, timestamp: { gte: today, lte: tomorrow } },
       orderBy: { timestamp: 'asc' }
     });
-    const emp = await prisma.employee.findUnique({ where: { id: req.employeeId }, select: { hourBankBalance: true } });
+    const emp = await prisma.employee.findUnique({
+      where: { id: req.employeeId },
+      select: { hourBankBalance: true, workScheduleType: true }
+    });
+    const schedule = emp?.workScheduleType || 'standard';
     const typeLabels = { CLOCK_IN: 'Entrada', BREAK_START: 'Saída para Almoço', BREAK_END: 'Volta do Almoço', CLOCK_OUT: 'Saída' };
-    const nextPunch = getNextPunchType(entries);
+    const nextPunch = getNextPunchType(entries, schedule);
     res.json({
       date: todayBR(),
       entries: entries.map(e => ({ ...e, typeLabel: typeLabels[e.type], time: formatBR(e.timestamp, 'HH:mm:ss') })),
       nextPunch: nextPunch ? typeLabels[nextPunch] : 'Dia completo',
       isComplete: !nextPunch,
+      workScheduleType: schedule,
       hourBankBalance: emp?.hourBankBalance || 0
     });
   } catch (error) {
@@ -186,8 +209,19 @@ async function getAllTodayEntries(req, res) {
   }
 }
 
-function getNextPunchType(entries) {
+function getNextPunchType(entries, schedule = 'standard') {
   const types = entries.map(e => e.type);
+  if (schedule === 'no_break') {
+    if (!types.includes('CLOCK_IN')) return 'CLOCK_IN';
+    if (!types.includes('CLOCK_OUT')) return 'CLOCK_OUT';
+    return null;
+  }
+  if (schedule === 'shift') {
+    const last = entries[entries.length - 1];
+    if (!last || last.type === 'CLOCK_OUT') return 'CLOCK_IN';
+    return 'CLOCK_OUT';
+  }
+  // standard
   if (!types.includes('CLOCK_IN')) return 'CLOCK_IN';
   if (!types.includes('BREAK_START')) return 'BREAK_START';
   if (!types.includes('BREAK_END')) return 'BREAK_END';

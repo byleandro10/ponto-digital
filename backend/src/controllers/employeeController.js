@@ -4,7 +4,7 @@ const { isValidEmail, isValidCPF, formatCPF, isValidPassword, isValidPhone, sani
 
 async function createEmployee(req, res) {
   try {
-    let { name, cpf, email, password, phone, position, department, workloadHours } = req.body;
+    let { name, cpf, email, password, phone, position, department, workloadHours, workScheduleType, geofenceExempt } = req.body;
 
     // Sanitização
     name = sanitize(name);
@@ -51,13 +51,23 @@ async function createEmployee(req, res) {
       return res.status(400).json({ error: 'Carga horária deve ser entre 1 e 24 horas.' });
     }
 
+    const validSchedules = ['standard', 'no_break', 'shift'];
+    const schedule = validSchedules.includes(workScheduleType) ? workScheduleType : 'standard';
+
     const existingCpf = await prisma.employee.findUnique({ where: { cpf } });
     if (existingCpf) return res.status(400).json({ error: 'CPF já cadastrado.' });
     const existingEmail = await prisma.employee.findUnique({ where: { email } });
     if (existingEmail) return res.status(400).json({ error: 'E-mail já cadastrado.' });
     const hashedPassword = await bcrypt.hash(password, 12);
     const employee = await prisma.employee.create({
-      data: { name, cpf, email, password: hashedPassword, phone: phone || null, position: position || null, department: department || null, workloadHours: parsedWorkload, companyId: req.companyId }
+      data: {
+        name, cpf, email, password: hashedPassword,
+        phone: phone || null, position: position || null,
+        department: department || null, workloadHours: parsedWorkload,
+        workScheduleType: schedule,
+        geofenceExempt: !!geofenceExempt,
+        companyId: req.companyId
+      }
     });
     res.status(201).json({
       message: 'Funcionário cadastrado com sucesso!',
@@ -88,7 +98,7 @@ async function listEmployees(req, res) {
     if (active !== undefined) where.active = active === 'true';
     const employees = await prisma.employee.findMany({
       where,
-      select: { id: true, name: true, cpf: true, email: true, phone: true, position: true, department: true, workloadHours: true, active: true, createdAt: true },
+      select: { id: true, name: true, cpf: true, email: true, phone: true, position: true, department: true, workloadHours: true, workScheduleType: true, geofenceExempt: true, active: true, createdAt: true },
       orderBy: { name: 'asc' }
     });
     res.json({ employees, total: employees.length });
@@ -102,7 +112,7 @@ async function getEmployee(req, res) {
   try {
     const employee = await prisma.employee.findFirst({
       where: { id: req.params.id, companyId: req.companyId },
-      select: { id: true, name: true, cpf: true, email: true, phone: true, position: true, department: true, workloadHours: true, active: true, createdAt: true }
+      select: { id: true, name: true, cpf: true, email: true, phone: true, position: true, department: true, workloadHours: true, workScheduleType: true, geofenceExempt: true, active: true, createdAt: true }
     });
     if (!employee) return res.status(404).json({ error: 'Funcionário não encontrado.' });
     res.json({ employee });
@@ -114,7 +124,7 @@ async function getEmployee(req, res) {
 
 async function updateEmployee(req, res) {
   try {
-    let { name, email, phone, position, department, workloadHours, active } = req.body;
+    let { name, email, phone, position, department, workloadHours, active, workScheduleType, geofenceExempt } = req.body;
     const employee = await prisma.employee.findFirst({ where: { id: req.params.id, companyId: req.companyId } });
     if (!employee) return res.status(404).json({ error: 'Funcionário não encontrado.' });
 
@@ -145,14 +155,21 @@ async function updateEmployee(req, res) {
       return res.status(400).json({ error: 'Carga horária deve ser entre 1 e 24 horas.' });
     }
 
+    const validSchedules = ['standard', 'no_break', 'shift'];
+
     const updated = await prisma.employee.update({
       where: { id: req.params.id },
       data: {
-        ...(name && { name }), ...(email && { email }), ...(phone !== undefined && { phone: phone || null }),
-        ...(position !== undefined && { position: position || null }), ...(department !== undefined && { department: department || null }),
-        ...(parsedWorkload !== undefined && { workloadHours: parsedWorkload }), ...(active !== undefined && { active })
+        ...(name && { name }), ...(email && { email }),
+        ...(phone !== undefined && { phone: phone || null }),
+        ...(position !== undefined && { position: position || null }),
+        ...(department !== undefined && { department: department || null }),
+        ...(parsedWorkload !== undefined && { workloadHours: parsedWorkload }),
+        ...(active !== undefined && { active }),
+        ...(workScheduleType && validSchedules.includes(workScheduleType) && { workScheduleType }),
+        ...(geofenceExempt !== undefined && { geofenceExempt: !!geofenceExempt }),
       },
-      select: { id: true, name: true, cpf: true, email: true, phone: true, position: true, department: true, workloadHours: true, active: true }
+      select: { id: true, name: true, cpf: true, email: true, phone: true, position: true, department: true, workloadHours: true, workScheduleType: true, geofenceExempt: true, active: true }
     });
     res.json({ message: 'Funcionário atualizado!', employee: updated });
   } catch (error) {
