@@ -32,6 +32,36 @@ function FlyTo({ lat, lng }) {
   return null;
 }
 
+/** Centraliza o mapa na primeira cerca assim que as cercas carregam */
+function SetViewOnFences({ fences }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!fences || fences.length === 0) return;
+    const lat = parseFloat(fences[0].latitude);
+    const lng = parseFloat(fences[0].longitude);
+    if (isNaN(lat) || isNaN(lng)) return;
+
+    if (fences.length === 1) {
+      // Uma só cerca: centraliza com zoom 15
+      map.setView([lat, lng], 15, { animate: false });
+    } else {
+      // Múltiplas cercas: ajusta bounds para mostrar todas
+      const bounds = fences
+        .map(f => {
+          const la = parseFloat(f.latitude);
+          const lo = parseFloat(f.longitude);
+          return isNaN(la) || isNaN(lo) ? null : [la, lo];
+        })
+        .filter(Boolean);
+      if (bounds.length > 0) {
+        map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16, animate: false });
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fences.length]);
+  return null;
+}
+
 export default function Geofences() {
   const [fences, setFences] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -122,13 +152,9 @@ export default function Geofences() {
     }, () => toast.error('Não foi possível obter localização'));
   }
 
-  const mapCenter = fences.length > 0
-    ? [parseFloat(fences[0].latitude), parseFloat(fences[0].longitude)]
-    : defaultCenter;
-
   const formLat = parseFloat(form.latitude);
   const formLng = parseFloat(form.longitude);
-  const formCenter = (!isNaN(formLat) && !isNaN(formLng)) ? [formLat, formLng] : mapCenter;
+  const formCenter = (!isNaN(formLat) && !isNaN(formLng)) ? [formLat, formLng] : defaultCenter;
 
   return (
     <AdminLayout title="Cercas Virtuais">
@@ -146,11 +172,12 @@ export default function Geofences() {
             <FiMap className="w-4 h-4 text-blue-600" />
             <h2 className="font-semibold text-gray-700">Visão Geral — Todas as Cercas</h2>
           </div>
-          <MapContainer center={mapCenter} zoom={fences.length > 0 ? 14 : 5} style={{ height: '360px', width: '100%' }} scrollWheelZoom>
+          <MapContainer center={defaultCenter} zoom={5} style={{ height: '360px', width: '100%' }} scrollWheelZoom>
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
+            <SetViewOnFences fences={fences} />
             {fences.map((fence, i) => {
               const color = FENCE_COLORS[i % FENCE_COLORS.length];
               const lat = parseFloat(fence.latitude);

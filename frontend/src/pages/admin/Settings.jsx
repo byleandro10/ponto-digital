@@ -2,19 +2,26 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
-import { FiSave, FiCamera, FiMapPin } from 'react-icons/fi';
+import { FiSave, FiCamera, FiMapPin, FiLock, FiEye, FiEyeOff, FiX } from 'react-icons/fi';
 import AdminLayout from '../../components/AdminLayout';
 
 export default function Settings() {
   const [config, setConfig] = useState({ requireSelfie: false, geofenceMode: 'off' });
   const [loading, setLoading] = useState(true);
 
+  // Estado do modal de alterar senha
+  const [showPwdModal, setShowPwdModal] = useState(false);
+  const [pwdForm, setPwdForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [pwdLoading, setPwdLoading] = useState(false);
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+
   useEffect(() => { fetchConfig(); }, []);
 
   async function fetchConfig() {
     try {
       const res = await api.get('/geofences/config');
-      // A API retorna { config: { requireSelfie, geofenceMode, ... } }
       const data = res.data.config || res.data;
       setConfig({
         requireSelfie: data.requireSelfie ?? false,
@@ -33,10 +40,42 @@ export default function Settings() {
     }
   }
 
+  async function handleChangePassword(e) {
+    e.preventDefault();
+    if (pwdForm.newPassword !== pwdForm.confirmPassword) {
+      return toast.error('A nova senha e a confirmação não coincidem.');
+    }
+    if (pwdForm.newPassword.length < 6) {
+      return toast.error('Nova senha deve ter no mínimo 6 caracteres.');
+    }
+    setPwdLoading(true);
+    try {
+      await api.put('/auth/change-password/admin', {
+        currentPassword: pwdForm.currentPassword,
+        newPassword: pwdForm.newPassword,
+      });
+      toast.success('Senha alterada com sucesso!');
+      setShowPwdModal(false);
+      setPwdForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Erro ao alterar senha');
+    } finally {
+      setPwdLoading(false);
+    }
+  }
+
+  function closePwdModal() {
+    setShowPwdModal(false);
+    setPwdForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    setShowCurrent(false);
+    setShowNew(false);
+    setShowConfirm(false);
+  }
+
   const geofenceModes = [
-    { value: 'off', label: 'Desligado', desc: 'Geofencing não será verificado', icon: '🔵' },
-    { value: 'warn', label: 'Avisar', desc: 'Registra o ponto, mas avisa que está fora da cerca', icon: '🟡' },
-    { value: 'block', label: 'Bloquear', desc: 'Impede o registro de ponto fora da cerca', icon: '🔴' }
+    { value: 'off',   label: 'Desligado', desc: 'Geofencing não será verificado',                           icon: '🔵' },
+    { value: 'warn',  label: 'Avisar',    desc: 'Registra o ponto, mas avisa que está fora da cerca',       icon: '🟡' },
+    { value: 'block', label: 'Bloquear',  desc: 'Impede o registro de ponto fora da cerca',                 icon: '🔴' },
   ];
 
   if (loading) return (
@@ -48,6 +87,7 @@ export default function Settings() {
   return (
     <AdminLayout title="Configurações">
       <div className="max-w-2xl mx-auto p-6 space-y-6">
+
         {/* Selfie */}
         <div className="bg-white rounded-xl shadow p-6">
           <div className="flex items-center gap-3 mb-4">
@@ -59,7 +99,8 @@ export default function Settings() {
           </div>
           <label className="flex items-center gap-3 cursor-pointer">
             <div className="relative">
-              <input type="checkbox" checked={config.requireSelfie} onChange={e => setConfig({...config, requireSelfie: e.target.checked})}
+              <input type="checkbox" checked={config.requireSelfie}
+                onChange={e => setConfig({ ...config, requireSelfie: e.target.checked })}
                 className="sr-only peer" />
               <div className="w-11 h-6 bg-gray-200 rounded-full peer-checked:bg-blue-600 transition-colors"></div>
               <div className="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow peer-checked:translate-x-5 transition-transform"></div>
@@ -83,7 +124,7 @@ export default function Settings() {
                 className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition ${config.geofenceMode === mode.value ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
                 <input type="radio" name="geofenceMode" value={mode.value}
                   checked={config.geofenceMode === mode.value}
-                  onChange={e => setConfig({...config, geofenceMode: e.target.value})}
+                  onChange={e => setConfig({ ...config, geofenceMode: e.target.value })}
                   className="mt-1" />
                 <div>
                   <span className="font-medium text-gray-800">{mode.icon} {mode.label}</span>
@@ -92,7 +133,26 @@ export default function Settings() {
               </label>
             ))}
           </div>
-          <p className="text-xs text-gray-400 mt-3">Configure as cercas em <Link to="/admin/geofences" className="text-blue-500 underline">Cercas Virtuais</Link></p>
+          <p className="text-xs text-gray-400 mt-3">
+            Configure as cercas em <Link to="/admin/geofences" className="text-blue-500 underline">Cercas Virtuais</Link>
+          </p>
+        </div>
+
+        {/* Segurança — Alterar Senha */}
+        <div className="bg-white rounded-xl shadow p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="bg-red-100 p-2 rounded-lg"><FiLock className="w-5 h-5 text-red-600" /></div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-800">Segurança</h2>
+              <p className="text-sm text-gray-500">Altere a senha da sua conta de administrador</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowPwdModal(true)}
+            className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-4 py-2.5 rounded-lg transition text-sm"
+          >
+            <FiLock className="w-4 h-4" /> Alterar Senha
+          </button>
         </div>
 
         {/* Save */}
@@ -101,6 +161,139 @@ export default function Settings() {
           <FiSave /> Salvar Configurações
         </button>
       </div>
+
+      {/* Modal Alterar Senha */}
+      {showPwdModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <FiLock className="w-5 h-5 text-red-500" /> Alterar Senha
+              </h2>
+              <button onClick={closePwdModal} className="text-gray-400 hover:text-red-500 transition">
+                <FiX className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleChangePassword} className="p-6 space-y-4">
+              {/* Senha atual */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Senha atual</label>
+                <div className="relative">
+                  <input
+                    type={showCurrent ? 'text' : 'password'}
+                    value={pwdForm.currentPassword}
+                    onChange={e => setPwdForm({ ...pwdForm, currentPassword: e.target.value })}
+                    placeholder="••••••"
+                    required
+                    className="w-full px-4 py-2.5 pr-10 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  />
+                  <button type="button" onClick={() => setShowCurrent(v => !v)}
+                    className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
+                    {showCurrent ? <FiEyeOff className="w-4 h-4" /> : <FiEye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Nova senha */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nova senha</label>
+                <div className="relative">
+                  <input
+                    type={showNew ? 'text' : 'password'}
+                    value={pwdForm.newPassword}
+                    onChange={e => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
+                    placeholder="Mínimo 6 caracteres"
+                    required
+                    minLength={6}
+                    className="w-full px-4 py-2.5 pr-10 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  />
+                  <button type="button" onClick={() => setShowNew(v => !v)}
+                    className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
+                    {showNew ? <FiEyeOff className="w-4 h-4" /> : <FiEye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {/* Barra de força da senha */}
+                {pwdForm.newPassword && (
+                  <div className="mt-1.5">
+                    <div className="flex gap-1 h-1">
+                      {[1, 2, 3, 4].map(i => {
+                        const strength = [
+                          pwdForm.newPassword.length >= 6,
+                          pwdForm.newPassword.length >= 10,
+                          /[A-Z]/.test(pwdForm.newPassword) && /[0-9]/.test(pwdForm.newPassword),
+                          /[^A-Za-z0-9]/.test(pwdForm.newPassword),
+                        ].filter(Boolean).length;
+                        const colors = ['bg-red-400', 'bg-orange-400', 'bg-yellow-400', 'bg-green-500'];
+                        return <div key={i} className={`flex-1 rounded-full ${i <= strength ? colors[strength - 1] : 'bg-gray-200'}`} />;
+                      })}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {[
+                        pwdForm.newPassword.length >= 6,
+                        pwdForm.newPassword.length >= 10,
+                        /[A-Z]/.test(pwdForm.newPassword) && /[0-9]/.test(pwdForm.newPassword),
+                        /[^A-Za-z0-9]/.test(pwdForm.newPassword),
+                      ].filter(Boolean).length <= 1 ? 'Fraca' :
+                       [
+                        pwdForm.newPassword.length >= 6,
+                        pwdForm.newPassword.length >= 10,
+                        /[A-Z]/.test(pwdForm.newPassword) && /[0-9]/.test(pwdForm.newPassword),
+                        /[^A-Za-z0-9]/.test(pwdForm.newPassword),
+                       ].filter(Boolean).length === 2 ? 'Razoável' :
+                       [
+                        pwdForm.newPassword.length >= 6,
+                        pwdForm.newPassword.length >= 10,
+                        /[A-Z]/.test(pwdForm.newPassword) && /[0-9]/.test(pwdForm.newPassword),
+                        /[^A-Za-z0-9]/.test(pwdForm.newPassword),
+                       ].filter(Boolean).length === 3 ? 'Boa' : 'Forte'}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Confirmar nova senha */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar nova senha</label>
+                <div className="relative">
+                  <input
+                    type={showConfirm ? 'text' : 'password'}
+                    value={pwdForm.confirmPassword}
+                    onChange={e => setPwdForm({ ...pwdForm, confirmPassword: e.target.value })}
+                    placeholder="Repita a nova senha"
+                    required
+                    className={`w-full px-4 py-2.5 pr-10 rounded-lg border focus:ring-2 focus:ring-blue-500 outline-none text-sm ${
+                      pwdForm.confirmPassword && pwdForm.newPassword !== pwdForm.confirmPassword
+                        ? 'border-red-400 bg-red-50'
+                        : 'border-gray-300'
+                    }`}
+                  />
+                  <button type="button" onClick={() => setShowConfirm(v => !v)}
+                    className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
+                    {showConfirm ? <FiEyeOff className="w-4 h-4" /> : <FiEye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {pwdForm.confirmPassword && pwdForm.newPassword !== pwdForm.confirmPassword && (
+                  <p className="text-xs text-red-500 mt-1">As senhas não coincidem</p>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={pwdLoading}
+                  className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 font-medium transition disabled:opacity-50"
+                >
+                  {pwdLoading ? 'Salvando...' : 'Alterar Senha'}
+                </button>
+                <button type="button" onClick={closePwdModal}
+                  className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-lg hover:bg-gray-200 font-medium transition">
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </AdminLayout>
   );
 }

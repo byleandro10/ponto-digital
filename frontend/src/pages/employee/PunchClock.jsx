@@ -5,7 +5,7 @@ import api from '../../services/api';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import 'dayjs/locale/pt-br';
-import { FiClock, FiMapPin, FiCheckCircle, FiLogOut, FiCamera, FiAlertTriangle, FiList, FiWifiOff } from 'react-icons/fi';
+import { FiClock, FiMapPin, FiCheckCircle, FiLogOut, FiCamera, FiAlertTriangle, FiList, FiWifiOff, FiLock, FiEye, FiEyeOff, FiX } from 'react-icons/fi';
 import SelfieCapture from '../../components/SelfieCapture';
 import OfflineBanner from '../../components/OfflineBanner';
 import useOfflineQueue, { enqueueOfflinePunch } from '../../hooks/useOfflineQueue';
@@ -25,6 +25,14 @@ export default function PunchClock() {
   const [requireSelfie, setRequireSelfie] = useState(false);
   const [hourBankBalance, setHourBankBalance] = useState(null);
   const [geoWarning, setGeoWarning] = useState(null);
+
+  // Estado do modal de alterar senha
+  const [showPwdModal, setShowPwdModal] = useState(false);
+  const [pwdForm, setPwdForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [pwdLoading, setPwdLoading] = useState(false);
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   // Função da API encapsulada em useCallback para o hook de offline
   const apiPunch = useCallback(async (data) => {
@@ -151,6 +159,38 @@ export default function PunchClock() {
     handlePunch(dataUrl);
   }
 
+  async function handleChangePassword(e) {
+    e.preventDefault();
+    if (pwdForm.newPassword !== pwdForm.confirmPassword) {
+      return toast.error('A nova senha e a confirmação não coincidem.');
+    }
+    if (pwdForm.newPassword.length < 6) {
+      return toast.error('Nova senha deve ter no mínimo 6 caracteres.');
+    }
+    setPwdLoading(true);
+    try {
+      await api.put('/auth/change-password/employee', {
+        currentPassword: pwdForm.currentPassword,
+        newPassword: pwdForm.newPassword,
+      });
+      toast.success('Senha alterada com sucesso!');
+      setShowPwdModal(false);
+      setPwdForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Erro ao alterar senha');
+    } finally {
+      setPwdLoading(false);
+    }
+  }
+
+  function closePwdModal() {
+    setShowPwdModal(false);
+    setPwdForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    setShowCurrent(false);
+    setShowNew(false);
+    setShowConfirm(false);
+  }
+
   const typeColors = {
     CLOCK_IN: 'bg-green-100 text-green-700',
     BREAK_START: 'bg-yellow-100 text-yellow-700',
@@ -159,6 +199,7 @@ export default function PunchClock() {
   };
 
   return (
+    <>
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       {showCamera && <SelfieCapture onCapture={onSelfieCapture} onCancel={() => setShowCamera(false)} />}
 
@@ -184,6 +225,14 @@ export default function PunchClock() {
             <FiList className="w-4 h-4" />
             <span className="hidden sm:inline">Histórico</span>
           </Link>
+          <button
+            onClick={() => setShowPwdModal(true)}
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800"
+            title="Alterar Senha"
+          >
+            <FiLock className="w-4 h-4" />
+            <span className="hidden sm:inline">Senha</span>
+          </button>
           <span className="text-sm text-gray-600">{user?.name}</span>
           <button onClick={logout} className="text-gray-400 hover:text-red-500"><FiLogOut /></button>
         </div>
@@ -279,5 +328,99 @@ export default function PunchClock() {
         </div>
       </div>
     </div>
+
+      {/* Modal Alterar Senha — Funcionário */}
+      {showPwdModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+          <div className="flex items-center justify-between px-6 py-4 border-b">
+            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+              <FiLock className="w-5 h-5 text-blue-500" /> Alterar Senha
+            </h2>
+            <button onClick={closePwdModal} className="text-gray-400 hover:text-red-500 transition">
+              <FiX className="w-5 h-5" />
+            </button>
+          </div>
+          <form onSubmit={handleChangePassword} className="p-6 space-y-4">
+            {/* Senha atual */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Senha atual</label>
+              <div className="relative">
+                <input
+                  type={showCurrent ? 'text' : 'password'}
+                  value={pwdForm.currentPassword}
+                  onChange={e => setPwdForm({ ...pwdForm, currentPassword: e.target.value })}
+                  placeholder="••••••"
+                  required
+                  className="w-full px-4 py-2.5 pr-10 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                />
+                <button type="button" onClick={() => setShowCurrent(v => !v)}
+                  className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
+                  {showCurrent ? <FiEyeOff className="w-4 h-4" /> : <FiEye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            {/* Nova senha */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nova senha</label>
+              <div className="relative">
+                <input
+                  type={showNew ? 'text' : 'password'}
+                  value={pwdForm.newPassword}
+                  onChange={e => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
+                  placeholder="Mínimo 6 caracteres"
+                  required
+                  minLength={6}
+                  className="w-full px-4 py-2.5 pr-10 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                />
+                <button type="button" onClick={() => setShowNew(v => !v)}
+                  className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
+                  {showNew ? <FiEyeOff className="w-4 h-4" /> : <FiEye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            {/* Confirmar nova senha */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar nova senha</label>
+              <div className="relative">
+                <input
+                  type={showConfirm ? 'text' : 'password'}
+                  value={pwdForm.confirmPassword}
+                  onChange={e => setPwdForm({ ...pwdForm, confirmPassword: e.target.value })}
+                  placeholder="Repita a nova senha"
+                  required
+                  className={`w-full px-4 py-2.5 pr-10 rounded-lg border focus:ring-2 focus:ring-blue-500 outline-none text-sm ${
+                    pwdForm.confirmPassword && pwdForm.newPassword !== pwdForm.confirmPassword
+                      ? 'border-red-400 bg-red-50'
+                      : 'border-gray-300'
+                  }`}
+                />
+                <button type="button" onClick={() => setShowConfirm(v => !v)}
+                  className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
+                  {showConfirm ? <FiEyeOff className="w-4 h-4" /> : <FiEye className="w-4 h-4" />}
+                </button>
+              </div>
+              {pwdForm.confirmPassword && pwdForm.newPassword !== pwdForm.confirmPassword && (
+                <p className="text-xs text-red-500 mt-1">As senhas não coincidem</p>
+              )}
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                type="submit"
+                disabled={pwdLoading}
+                className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 font-medium transition disabled:opacity-50"
+              >
+                {pwdLoading ? 'Salvando...' : 'Alterar Senha'}
+              </button>
+              <button type="button" onClick={closePwdModal}
+                className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-lg hover:bg-gray-200 font-medium transition">
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

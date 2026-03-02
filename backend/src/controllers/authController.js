@@ -126,4 +126,59 @@ async function loginEmployee(req, res) {
   }
 }
 
-module.exports = { register, loginAdmin, loginEmployee };
+/** Alterar senha — admin (User) */
+async function changePasswordAdmin(req, res) {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Senha atual e nova senha são obrigatórias.' });
+    }
+    if (!isValidPassword(newPassword)) {
+      return res.status(400).json({ error: 'Nova senha deve ter no mínimo 6 caracteres.' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+    const valid = await bcrypt.compare(currentPassword, user.password);
+    if (!valid) return res.status(401).json({ error: 'Senha atual incorreta.' });
+
+    const hashed = await bcrypt.hash(newPassword, 12);
+    await prisma.user.update({ where: { id: req.userId }, data: { password: hashed } });
+
+    res.json({ message: 'Senha alterada com sucesso!' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro ao alterar senha.' });
+  }
+}
+
+/** Alterar senha — funcionário (Employee) */
+async function changePasswordEmployee(req, res) {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Senha atual e nova senha são obrigatórias.' });
+    }
+    if (!isValidPassword(newPassword)) {
+      return res.status(400).json({ error: 'Nova senha deve ter no mínimo 6 caracteres.' });
+    }
+
+    const employee = await prisma.employee.findUnique({ where: { id: req.employeeId } });
+    if (!employee) return res.status(404).json({ error: 'Funcionário não encontrado.' });
+
+    const valid = await bcrypt.compare(currentPassword, employee.password);
+    if (!valid) return res.status(401).json({ error: 'Senha atual incorreta.' });
+
+    const hashed = await bcrypt.hash(newPassword, 12);
+    await prisma.employee.update({ where: { id: req.employeeId }, data: { password: hashed } });
+
+    res.json({ message: 'Senha alterada com sucesso!' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro ao alterar senha.' });
+  }
+}
+
+module.exports = { register, loginAdmin, loginEmployee, changePasswordAdmin, changePasswordEmployee };
+
