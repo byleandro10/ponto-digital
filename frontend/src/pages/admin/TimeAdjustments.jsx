@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
-import { FiArrowLeft, FiEdit2, FiPlus, FiTrash2, FiClock, FiAlertCircle, FiCamera, FiX } from 'react-icons/fi';
+import { FiEdit2, FiPlus, FiTrash2, FiClock, FiAlertCircle, FiCamera, FiX } from 'react-icons/fi';
+import AdminLayout from '../../components/AdminLayout';
 
 export default function TimeAdjustments() {
   const [employees, setEmployees] = useState([]);
@@ -114,12 +114,7 @@ export default function TimeAdjustments() {
   const [showPhoto, setShowPhoto] = useState(null);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm px-6 py-4 flex items-center gap-4">
-        <Link to="/admin/dashboard" className="text-gray-400 hover:text-gray-600"><FiArrowLeft /></Link>
-        <h1 className="text-xl font-bold text-gray-800">Ajustes de Ponto</h1>
-      </header>
-
+    <AdminLayout title="Ajustes de Ponto">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
         {/* Filtros */}
         <div className="bg-white rounded-xl shadow p-6">
@@ -355,6 +350,6 @@ export default function TimeAdjustments() {
           </div>
         </div>
       )}
-    </div>
+    </AdminLayout>
   );
 }

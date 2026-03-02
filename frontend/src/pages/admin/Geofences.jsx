@@ -4,7 +4,8 @@ import { MapContainer, TileLayer, Marker, Circle, Popup, useMap, useMapEvents } 
 import L from 'leaflet';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
-import { FiArrowLeft, FiMapPin, FiPlus, FiEdit2, FiTrash2, FiCheck, FiX, FiMap, FiCrosshair } from 'react-icons/fi';
+import { FiMapPin, FiPlus, FiEdit2, FiTrash2, FiX, FiMap, FiCrosshair } from 'react-icons/fi';
+import AdminLayout from '../../components/AdminLayout';
 
 // Fix Leaflet default icons no Vite
 delete L.Icon.Default.prototype._getIconUrl;
@@ -130,13 +131,7 @@ export default function Geofences() {
   const formCenter = (!isNaN(formLat) && !isNaN(formLng)) ? [formLat, formLng] : mapCenter;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm px-6 py-4 flex items-center gap-4">
-        <Link to="/admin/dashboard" className="text-gray-400 hover:text-gray-600"><FiArrowLeft /></Link>
-        <FiMapPin className="w-5 h-5 text-blue-600" />
-        <h1 className="text-xl font-bold text-gray-800">Cercas Virtuais (Geofencing)</h1>
-      </header>
-
+    <AdminLayout title="Cercas Virtuais">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
         <div className="flex justify-between items-center">
           <p className="text-sm text-gray-500">{fences.length} cerca(s) cadastrada(s)</p>
@@ -369,6 +364,6 @@ export default function Geofences() {
           </div>
         </div>
       )}
-    </div>
+    </AdminLayout>
   );
 }

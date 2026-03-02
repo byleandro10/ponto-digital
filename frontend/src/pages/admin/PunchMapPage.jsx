@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, Circle, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 import {
-  FiArrowLeft, FiMapPin, FiFilter, FiUsers, FiAlertTriangle,
+  FiMapPin, FiFilter, FiUsers, FiAlertTriangle,
   FiCheckCircle, FiXCircle, FiClock, FiCamera, FiRefreshCw, FiX, FiUser
 } from 'react-icons/fi';
+import AdminLayout from '../../components/AdminLayout';
 
 // Fix ícones do Leaflet no Vite/Webpack
 delete L.Icon.Default.prototype._getIconUrl;
@@ -131,25 +131,9 @@ export default function PunchMapPage() {
       : [-15.7801, -47.9292];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm px-6 py-4 flex items-center gap-4 sticky top-0 z-10">
-        <Link to="/admin/dashboard" className="text-gray-400 hover:text-gray-600">
-          <FiArrowLeft />
-        </Link>
-        <FiMapPin className="w-5 h-5 text-blue-600" />
-        <h1 className="text-xl font-bold text-gray-800 flex-1">Mapa de Batidas</h1>
-        <button
-          onClick={fetchMap}
-          disabled={loading}
-          className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 disabled:opacity-40"
-        >
-          <FiRefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Atualizar
-        </button>
-      </header>
-
+    <AdminLayout title="Mapa de Batidas">
       <div className="max-w-7xl mx-auto p-4 space-y-4">
-        {/* Filtros */}
+        {/* Botão de atualizar + filtros */}
         <form onSubmit={handleFilter} className="bg-white rounded-xl shadow p-4">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <div>
@@ -597,6 +581,6 @@ export default function PunchMapPage() {
           </div>
         </div>
       )}
-    </div>
+    </AdminLayout>
   );
 }

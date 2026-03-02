@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
-import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiArrowLeft } from 'react-icons/fi';
+import { FiPlus, FiSearch, FiEdit2, FiTrash2 } from 'react-icons/fi';
 import { maskCPF, maskPhone, formatCPFDisplay, unmask } from '../../utils/masks';
+import AdminLayout from '../../components/AdminLayout';
 
 export default function Employees() {
   const [employees, setEmployees] = useState([]);
@@ -66,11 +66,7 @@ export default function Employees() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm px-6 py-4 flex items-center gap-4">
-        <Link to="/admin/dashboard" className="text-gray-400 hover:text-gray-600"><FiArrowLeft /></Link>
-        <h1 className="text-xl font-bold text-gray-800">Funcionários</h1>
-      </header>
+    <AdminLayout title="Funcionários">
       <div className="max-w-6xl mx-auto p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div className="relative">
@@ -166,6 +162,6 @@ export default function Employees() {
           </div>
         </div>
       )}
-    </div>
+    </AdminLayout>
   );
 }
