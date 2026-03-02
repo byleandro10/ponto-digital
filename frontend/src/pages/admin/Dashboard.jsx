@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
-import { FiUsers, FiCheckCircle, FiXCircle, FiClock, FiLogOut, FiPlus, FiFileText, FiEdit2, FiMapPin, FiSettings } from 'react-icons/fi';
+import { FiUsers, FiCheckCircle, FiXCircle, FiClock, FiLogOut, FiPlus, FiFileText, FiEdit2, FiMapPin, FiSettings, FiMap } from 'react-icons/fi';
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
@@ -57,6 +57,7 @@ export default function Dashboard() {
           <Link to="/admin/reports" className="text-sm text-blue-600 hover:underline flex items-center gap-1"><FiFileText /> Relatórios</Link>
           <Link to="/admin/adjustments" className="text-sm text-blue-600 hover:underline flex items-center gap-1"><FiEdit2 /> Ajustes</Link>
           <Link to="/admin/geofences" className="text-sm text-blue-600 hover:underline flex items-center gap-1"><FiMapPin /> Cercas</Link>
+          <Link to="/admin/punch-map" className="text-sm text-blue-600 hover:underline flex items-center gap-1"><FiMap /> Mapa de Batidas</Link>
           <Link to="/admin/settings" className="text-sm text-blue-600 hover:underline flex items-center gap-1"><FiSettings /> Config</Link>
           <button onClick={logout} className="text-gray-400 hover:text-red-500"><FiLogOut /></button>
         </div>

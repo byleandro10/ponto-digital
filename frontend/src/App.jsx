@@ -15,6 +15,7 @@ const Reports = lazy(() => import('./pages/admin/Reports'));
 const TimeAdjustments = lazy(() => import('./pages/admin/TimeAdjustments'));
 const Geofences = lazy(() => import('./pages/admin/Geofences'));
 const Settings = lazy(() => import('./pages/admin/Settings'));
+const PunchMapPage = lazy(() => import('./pages/admin/PunchMapPage'));
 
 const LoadingSpinner = () => (
   <div className="min-h-screen flex items-center justify-center">
@@ -46,6 +47,7 @@ function AppRoutes() {
         <Route path="/admin/adjustments" element={<PrivateRoute type="admin"><TimeAdjustments /></PrivateRoute>} />
         <Route path="/admin/geofences" element={<PrivateRoute type="admin"><Geofences /></PrivateRoute>} />
         <Route path="/admin/settings" element={<PrivateRoute type="admin"><Settings /></PrivateRoute>} />
+        <Route path="/admin/punch-map" element={<PrivateRoute type="admin"><PunchMapPage /></PrivateRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Suspense>

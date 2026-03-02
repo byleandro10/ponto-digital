@@ -1,6 +1,8 @@
 const prisma = require('../config/database');
 const dayjs = require('dayjs');
 const { calculateWorkedHours, calculateOvertime } = require('../utils/calculateHours');
+const { startOfTodayBR, endOfTodayBR, formatBR } = require('../utils/brazilTime');
+const { haversineDistance } = require('../services/geofenceService');
 
 async function getMonthlyReport(req, res) {
   try {
@@ -85,4 +87,125 @@ async function getDashboardStats(req, res) {
   }
 }
 
-module.exports = { getMonthlyReport, getDashboardStats };
+module.exports = { getMonthlyReport, getDashboardStats, getPunchMapData };
+
+/**
+ * Retorna todos os registros de ponto com coordenadas GPS para visualização no mapa.
+ * Suporta filtros: date (YYYY-MM-DD), employeeId.
+ * Inclui distância calculada até a cerca mais próxima.
+ */
+async function getPunchMapData(req, res) {
+  try {
+    const { date, employeeId } = req.query;
+
+    // Define janela de tempo
+    let start, end;
+    if (date) {
+      start = new Date(date + 'T00:00:00-03:00');
+      end   = new Date(date + 'T23:59:59.999-03:00');
+    } else {
+      start = startOfTodayBR();
+      end   = endOfTodayBR();
+    }
+
+    const where = {
+      employee: { companyId: req.companyId },
+      timestamp: { gte: start, lte: end },
+    };
+    if (employeeId) where.employeeId = employeeId;
+
+    const entries = await prisma.timeEntry.findMany({
+      where,
+      orderBy: { timestamp: 'asc' },
+      include: { employee: { select: { name: true, position: true, department: true } } }
+    });
+
+    // Busca cercas da empresa para calcular distância
+    const geofences = await prisma.geofence.findMany({
+      where: { companyId: req.companyId, active: true }
+    });
+
+    const TYPE_LABELS = {
+      CLOCK_IN: 'Entrada',
+      BREAK_START: 'Saída Almoço',
+      BREAK_END: 'Volta Almoço',
+      CLOCK_OUT: 'Saída'
+    };
+
+    const TYPE_COLORS = {
+      CLOCK_IN: '#16a34a',
+      BREAK_START: '#ca8a04',
+      BREAK_END: '#2563eb',
+      CLOCK_OUT: '#dc2626'
+    };
+
+    const markers = entries
+      .filter(e => e.latitude != null && e.longitude != null)
+      .map(e => {
+        // Calcula distância até a cerca mais próxima
+        let nearestFence = null;
+        let nearestDistance = null;
+        if (geofences.length > 0) {
+          let minDist = Infinity;
+          for (const fence of geofences) {
+            const dist = haversineDistance(e.latitude, e.longitude, fence.latitude, fence.longitude);
+            if (dist < minDist) {
+              minDist = dist;
+              nearestFence = fence;
+            }
+          }
+          nearestDistance = Math.round(minDist);
+        }
+
+        const isInside = nearestFence
+          ? nearestDistance <= nearestFence.radius
+          : null;
+
+        return {
+          id: e.id,
+          employeeName: e.employee.name,
+          employeePosition: e.employee.position,
+          type: e.type,
+          typeLabel: TYPE_LABELS[e.type] || e.type,
+          color: TYPE_COLORS[e.type] || '#6b7280',
+          time: formatBR(e.timestamp, 'HH:mm:ss'),
+          timestamp: e.timestamp,
+          latitude: e.latitude,
+          longitude: e.longitude,
+          address: e.address || null,
+          photo: e.photo || null,
+          insideGeofence: e.insideGeofence ?? isInside,
+          geofenceName: e.geofenceName || nearestFence?.name || null,
+          distanceFromFence: nearestDistance,
+          fenceRadius: nearestFence?.radius || null,
+          notes: e.notes || null
+        };
+      });
+
+    // Agrupa por funcionário para estatísticas
+    const byEmployee = {};
+    markers.forEach(m => {
+      if (!byEmployee[m.employeeName]) byEmployee[m.employeeName] = [];
+      byEmployee[m.employeeName].push(m);
+    });
+
+    res.json({
+      date: date || formatBR(new Date(), 'DD/MM/YYYY'),
+      markers,
+      geofences: geofences.map(f => ({
+        id: f.id,
+        name: f.name,
+        latitude: f.latitude,
+        longitude: f.longitude,
+        radius: f.radius,
+        active: f.active
+      })),
+      totalWithLocation: markers.length,
+      totalWithoutLocation: entries.length - markers.length,
+      byEmployee
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro ao buscar dados do mapa.' });
+  }
+}
