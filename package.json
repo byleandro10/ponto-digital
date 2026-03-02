@@ -1,0 +1,34 @@
+{
+  "name": "ponto-digital",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sistema de Ponto Digital para Pequenas Empresas - SaaS",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "echo Use 'npm run dev:backend' e 'npm run dev:frontend' em terminais separados",
+    "dev:backend": "cd backend && node src/app.js",
+    "dev:frontend": "cd frontend && npx vite --port 3000 --host",
+    "build": "cd frontend && npm install && npm run build",
+    "postinstall": "npx prisma generate --schema=backend/prisma/schema.prisma",
+    "db:push": "npx prisma db push --schema=backend/prisma/schema.prisma",
+    "db:studio": "npx prisma studio --schema=backend/prisma/schema.prisma",
+    "test": "cd backend && npm test",
+    "vercel-build": "cd frontend && npm install && npm run build"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dayjs": "^1.11.19",
+    "dotenv": "^17.3.1",
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "pdfkit": "^0.17.2",
+    "prisma": "^5.22.0"
+  }
+}

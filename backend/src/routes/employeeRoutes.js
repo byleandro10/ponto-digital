@@ -1,0 +1,12 @@
+const express = require('express');
+const router = express.Router();
+const { authMiddleware } = require('../middlewares/auth');
+const { roleGuard } = require('../middlewares/roleGuard');
+const { createEmployee, listEmployees, getEmployee, updateEmployee, deleteEmployee } = require('../controllers/employeeController');
+router.use(authMiddleware);
+router.post('/', roleGuard('ADMIN', 'SUPER_ADMIN'), createEmployee);
+router.get('/', roleGuard('ADMIN', 'SUPER_ADMIN', 'MANAGER'), listEmployees);
+router.get('/:id', roleGuard('ADMIN', 'SUPER_ADMIN', 'MANAGER'), getEmployee);
+router.put('/:id', roleGuard('ADMIN', 'SUPER_ADMIN'), updateEmployee);
+router.delete('/:id', roleGuard('ADMIN', 'SUPER_ADMIN'), deleteEmployee);
+module.exports = router;

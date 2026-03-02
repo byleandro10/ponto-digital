@@ -1,0 +1,135 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  cnpj      String   @unique
+  plan      String   @default("basic")
+  address   String?
+  logoUrl   String?
+  requireSelfie Boolean @default(false)
+  geofenceMode  String  @default("off") // off | warn | block
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users               User[]
+  employees           Employee[]
+  notificationSetting NotificationSetting?
+  geofences           Geofence[]
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("ADMIN")
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+}
+
+model Employee {
+  id            String   @id @default(uuid())
+  name          String
+  cpf           String   @unique
+  email         String   @unique
+  password      String
+  phone         String?
+  position      String?
+  department    String?
+  workloadHours Float    @default(8)
+  companyId     String
+  active        Boolean  @default(true)
+  hourBankBalance Int    @default(0) // saldo banco de horas em minutos (+ ou -)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  company       Company        @relation(fields: [companyId], references: [id])
+  timeEntries   TimeEntry[]
+  notifications Notification[]
+  adjustmentLogs TimeAdjustmentLog[]
+}
+
+model TimeEntry {
+  id         String   @id @default(uuid())
+  employeeId String
+  type       String
+  timestamp  DateTime @default(now())
+  latitude   Float?
+  longitude  Float?
+  address    String?
+  deviceInfo String?
+  photo      String?
+  notes      String?
+  insideGeofence Boolean? // null = sem geofence, true = dentro, false = fora
+  geofenceName   String?  // nome da cerca onde bateu
+  adjustedBy     String?  // userId de quem ajustou (null = original)
+  adjustedAt     DateTime?
+  adjustmentNote String?
+  originalTimestamp DateTime? // timestamp original antes do ajuste
+  createdAt  DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+}
+
+model TimeAdjustmentLog {
+  id          String   @id @default(uuid())
+  employeeId  String
+  entryId     String?  // null se foi adição de registro
+  action      String   // EDIT | ADD | DELETE
+  oldValue    String?  // JSON do valor antigo
+  newValue    String?  // JSON do valor novo
+  reason      String   // justificativa obrigatória
+  adjustedBy  String   // userId do admin
+  createdAt   DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+}
+
+model Geofence {
+  id        String  @id @default(uuid())
+  companyId String
+  name      String  // ex: "Matriz", "Filial Centro", "Obra Rua X"
+  latitude  Float
+  longitude Float
+  radius    Int     // raio em metros
+  active    Boolean @default(true)
+
+  company Company @relation(fields: [companyId], references: [id])
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  employeeId String
+  type       String
+  message    String
+  sentAt     DateTime @default(now())
+  read       Boolean  @default(false)
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+}
+
+model NotificationSetting {
+  id                   String  @id @default(uuid())
+  companyId            String  @unique
+  clockInReminder      Boolean @default(true)
+  clockOutReminder     Boolean @default(true)
+  missingPunchAlert    Boolean @default(true)
+  weeklyReport         Boolean @default(true)
+  punchConfirmation    Boolean @default(true)
+  clockInReminderTime  String  @default("07:50")
+  clockOutReminderTime String  @default("17:50")
+
+  company Company @relation(fields: [companyId], references: [id])
+}
