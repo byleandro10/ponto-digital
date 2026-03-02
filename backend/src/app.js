@@ -38,6 +38,13 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+app.get('/api/debug-env', (req, res) => {
+  const dbUrl = process.env.DATABASE_URL || 'NOT SET';
+  // Mask password
+  const masked = dbUrl.replace(/:([^@]+)@/, ':***@');
+  res.json({ DATABASE_URL: masked, DIRECT_URL: process.env.DIRECT_URL ? 'SET' : 'NOT SET', NODE_ENV: process.env.NODE_ENV || 'NOT SET' });
+});
+
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ error: 'Erro interno do servidor.' });
