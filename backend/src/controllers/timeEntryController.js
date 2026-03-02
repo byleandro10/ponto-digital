@@ -1,5 +1,4 @@
 const prisma = require('../config/database');
-const dayjs = require('dayjs');
 const { checkGeofence } = require('../services/geofenceService');
 const { calculateWorkedHours, calculateOvertime } = require('../utils/calculateHours');
 const { startOfTodayBR, endOfTodayBR, formatBR, todayBR } = require('../utils/brazilTime');
@@ -149,9 +148,18 @@ async function getHistory(req, res) {
         lte: new Date(endDate + 'T23:59:59.999-03:00')
       };
     } else {
-      const thirtyAgo = new Date();
-      thirtyAgo.setDate(thirtyAgo.getDate() - 30);
-      where.timestamp = { gte: thirtyAgo, lte: new Date() };
+      // Fallback: últimos 30 dias a partir de hoje no fuso BR
+      const { startOfDayBR, endOfTodayBR: endBR } = require('../utils/brazilTime');
+      const now = new Date();
+      const thirtyAgo = new Date(now.getTime() - 30 * 86400000);
+      const brThirtyAgo = new Date(thirtyAgo.getTime() + (-3 * 60 * 60 * 1000));
+      const y = brThirtyAgo.getUTCFullYear();
+      const m = String(brThirtyAgo.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(brThirtyAgo.getUTCDate()).padStart(2, '0');
+      where.timestamp = {
+        gte: new Date(`${y}-${m}-${d}T00:00:00-03:00`),
+        lte: endOfTodayBR()
+      };
     }
     const entries = await prisma.timeEntry.findMany({ where, orderBy: { timestamp: 'asc' } });
     const grouped = {};

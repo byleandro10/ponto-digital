@@ -1,17 +1,16 @@
 const prisma = require('../config/database');
-const dayjs = require('dayjs');
 const { calculateWorkedHours, calculateOvertime } = require('../utils/calculateHours');
-const { startOfTodayBR, endOfTodayBR, formatBR } = require('../utils/brazilTime');
+const { startOfTodayBR, endOfTodayBR, formatBR, todayBR, currentMonthBR, currentYearBR, startOfMonthBR, endOfMonthBR } = require('../utils/brazilTime');
 const { haversineDistance } = require('../services/geofenceService');
 
 async function getMonthlyReport(req, res) {
   try {
     const { employeeId } = req.params;
     const { month, year } = req.query;
-    const m = parseInt(month) || dayjs().month() + 1;
-    const y = parseInt(year) || dayjs().year();
-    const startDate = dayjs(`${y}-${String(m).padStart(2, '0')}-01`).startOf('month').toDate();
-    const endDate = dayjs(startDate).endOf('month').toDate();
+    const m = parseInt(month) || currentMonthBR();
+    const y = parseInt(year) || currentYearBR();
+    const startDate = startOfMonthBR(m, y);
+    const endDate = endOfMonthBR(m, y);
     const employee = await prisma.employee.findFirst({ where: { id: employeeId, companyId: req.companyId } });
     if (!employee) return res.status(404).json({ error: 'Funcionário não encontrado.' });
     const entries = await prisma.timeEntry.findMany({
@@ -20,7 +19,7 @@ async function getMonthlyReport(req, res) {
     });
     const grouped = {};
     entries.forEach(entry => {
-      const day = dayjs(entry.timestamp).format('YYYY-MM-DD');
+      const day = formatBR(entry.timestamp, 'YYYY-MM-DD');
       if (!grouped[day]) grouped[day] = [];
       grouped[day].push(entry);
     });
@@ -30,16 +29,20 @@ async function getMonthlyReport(req, res) {
       const worked = calculateWorkedHours(dayEntries);
       totalMinutesMonth += worked.totalMinutes;
       daysWorked++;
-      const getTime = (type) => { const e = dayEntries.find(x => x.type === type); return e ? dayjs(e.timestamp).format('HH:mm') : null; };
-      return { date: dayjs(date).format('DD/MM/YYYY'), clockIn: getTime('CLOCK_IN'), breakStart: getTime('BREAK_START'), breakEnd: getTime('BREAK_END'), clockOut: getTime('CLOCK_OUT'), totalHours: worked.formatted };
+      const getTime = (type) => { const e = dayEntries.find(x => x.type === type); return e ? formatBR(e.timestamp, 'HH:mm') : null; };
+      return { date: formatBR(new Date(date + 'T12:00:00-03:00'), 'DD/MM/YYYY'), clockIn: getTime('CLOCK_IN'), breakStart: getTime('BREAK_START'), breakEnd: getTime('BREAK_END'), clockOut: getTime('CLOCK_OUT'), totalHours: worked.formatted };
     });
     const overtime = calculateOvertime(totalMinutesMonth, daysWorked * employee.workloadHours);
+    // Conta dias úteis iterando pelo mês
     let businessDays = 0;
-    let current = dayjs(startDate);
-    while (current.isBefore(endDate) || current.isSame(endDate, 'day')) {
-      const dow = current.day();
+    const msPerDay = 86400000;
+    let cur = new Date(startDate.getTime());
+    while (cur <= endDate) {
+      // Converter para horário BR para pegar o dia da semana correto
+      const brDay = new Date(cur.getTime() + (-3 * 60 * 60 * 1000));
+      const dow = brDay.getUTCDay();
       if (dow !== 0 && dow !== 6) businessDays++;
-      current = current.add(1, 'day');
+      cur = new Date(cur.getTime() + msPerDay);
     }
     const totalWorkedHours = Math.floor(totalMinutesMonth / 60);
     const totalWorkedMins = totalMinutesMonth % 60;
@@ -64,9 +67,9 @@ async function getMonthlyReport(req, res) {
 
 async function getDashboardStats(req, res) {
   try {
-    const today = dayjs().startOf('day').toDate();
-    const tomorrow = dayjs().endOf('day').toDate();
-    const monthStart = dayjs().startOf('month').toDate();
+    const today = startOfTodayBR();
+    const tomorrow = endOfTodayBR();
+    const monthStart = startOfMonthBR(currentMonthBR(), currentYearBR());
     const totalEmployees = await prisma.employee.count({ where: { companyId: req.companyId, active: true } });
     const todayEntries = await prisma.timeEntry.findMany({
       where: { employee: { companyId: req.companyId }, timestamp: { gte: today, lte: tomorrow } },
@@ -79,7 +82,7 @@ async function getDashboardStats(req, res) {
     res.json({
       totalEmployees, presentToday, absentToday: totalEmployees - presentToday,
       totalEntriesThisMonth: monthEntries,
-      date: dayjs().format('DD/MM/YYYY'), time: dayjs().format('HH:mm:ss')
+      date: todayBR(), time: formatBR(new Date(), 'HH:mm:ss')
     });
   } catch (error) {
     console.error(error);

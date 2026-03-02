@@ -3,7 +3,7 @@
  * @module controllers/adjustmentController
  */
 const prisma = require('../config/database');
-const dayjs = require('dayjs');
+const { formatBR, startOfDayBR, endOfDayBR } = require('../utils/brazilTime');
 
 /** Editar horário de um registro de ponto */
 async function editTimeEntry(req, res) {
@@ -205,8 +205,8 @@ async function getEntriesByDate(req, res) {
     });
     if (!employee) return res.status(404).json({ error: 'Funcionário não encontrado.' });
 
-    const start = dayjs(date).startOf('day').toDate();
-    const end = dayjs(date).endOf('day').toDate();
+    const start = startOfDayBR(date);
+    const end = endOfDayBR(date);
 
     const entries = await prisma.timeEntry.findMany({
       where: { employeeId, timestamp: { gte: start, lte: end } },
@@ -222,7 +222,7 @@ async function getEntriesByDate(req, res) {
         type: e.type,
         typeLabel: typeLabels[e.type] || e.type,
         timestamp: e.timestamp,
-        time: dayjs(e.timestamp).format('HH:mm:ss'),
+        time: formatBR(e.timestamp, 'HH:mm:ss'),
         adjustedBy: e.adjustedBy,
         adjustmentNote: e.adjustmentNote,
         originalTimestamp: e.originalTimestamp,

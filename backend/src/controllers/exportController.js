@@ -3,18 +3,18 @@
  * @module controllers/exportController
  */
 const prisma = require('../config/database');
-const dayjs = require('dayjs');
 const { calculateWorkedHours, calculateOvertime } = require('../utils/calculateHours');
 const { generatePunchMirrorPDF, generateMonthlyExcel, generateMonthlyCSV } = require('../services/exportService');
+const { formatBR, currentMonthBR, currentYearBR, startOfMonthBR, endOfMonthBR } = require('../utils/brazilTime');
 
 /**
  * Monta os dados do relatório mensal (reutilizável)
  */
 async function buildMonthlyData(employeeId, companyId, month, year) {
-  const m = parseInt(month) || dayjs().month() + 1;
-  const y = parseInt(year) || dayjs().year();
-  const startDate = dayjs(`${y}-${String(m).padStart(2, '0')}-01`).startOf('month').toDate();
-  const endDate = dayjs(startDate).endOf('month').toDate();
+  const m = parseInt(month) || currentMonthBR();
+  const y = parseInt(year) || currentYearBR();
+  const startDate = startOfMonthBR(m, y);
+  const endDate = endOfMonthBR(m, y);
 
   const employee = await prisma.employee.findFirst({ where: { id: employeeId, companyId } });
   if (!employee) return null;
@@ -28,7 +28,7 @@ async function buildMonthlyData(employeeId, companyId, month, year) {
 
   const grouped = {};
   entries.forEach(entry => {
-    const day = dayjs(entry.timestamp).format('YYYY-MM-DD');
+    const day = formatBR(entry.timestamp, 'YYYY-MM-DD');
     if (!grouped[day]) grouped[day] = [];
     grouped[day].push(entry);
   });
@@ -41,11 +41,11 @@ async function buildMonthlyData(employeeId, companyId, month, year) {
     daysWorked++;
     const getTime = (type) => {
       const e = dayEntries.find(x => x.type === type);
-      return e ? dayjs(e.timestamp).format('HH:mm') : null;
+      return e ? formatBR(e.timestamp, 'HH:mm') : null;
     };
     const dayOvertime = calculateOvertime(worked.totalMinutes, employee.workloadHours);
     return {
-      date: dayjs(date).format('DD/MM/YYYY'),
+      date: formatBR(new Date(date + 'T12:00:00-03:00'), 'DD/MM/YYYY'),
       clockIn: getTime('CLOCK_IN'),
       breakStart: getTime('BREAK_START'),
       breakEnd: getTime('BREAK_END'),
@@ -60,12 +60,15 @@ async function buildMonthlyData(employeeId, companyId, month, year) {
   });
 
   const overtime = calculateOvertime(totalMinutesMonth, daysWorked * employee.workloadHours);
+  // Conta dias úteis iterando pelo mês
   let businessDays = 0;
-  let current = dayjs(startDate);
-  while (current.isBefore(endDate) || current.isSame(endDate, 'day')) {
-    const dow = current.day();
+  const msPerDay = 86400000;
+  let cur = new Date(startDate.getTime());
+  while (cur <= endDate) {
+    const brDay = new Date(cur.getTime() + (-3 * 60 * 60 * 1000));
+    const dow = brDay.getUTCDay();
     if (dow !== 0 && dow !== 6) businessDays++;
-    current = current.add(1, 'day');
+    cur = new Date(cur.getTime() + msPerDay);
   }
   const totalWorkedHours = Math.floor(totalMinutesMonth / 60);
   const totalWorkedMins = totalMinutesMonth % 60;
@@ -147,8 +150,8 @@ async function exportCSV(req, res) {
 async function exportConsolidated(req, res) {
   try {
     const { month, year } = req.query;
-    const m = parseInt(month) || dayjs().month() + 1;
-    const y = parseInt(year) || dayjs().year();
+    const m = parseInt(month) || currentMonthBR();
+    const y = parseInt(year) || currentYearBR();
 
     const employees = await prisma.employee.findMany({
       where: { companyId: req.companyId, active: true },

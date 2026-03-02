@@ -75,4 +75,61 @@ function todayBR() {
   return formatBR(new Date(), 'DD/MM/YYYY');
 }
 
-module.exports = { startOfTodayBR, endOfTodayBR, formatBR, todayBR, TZ };
+/**
+ * Retorna o mês atual no horário de Brasília (1-12).
+ */
+function currentMonthBR() {
+  const br = toBrazilDate(new Date());
+  return br.getUTCMonth() + 1;
+}
+
+/**
+ * Retorna o ano atual no horário de Brasília.
+ */
+function currentYearBR() {
+  const br = toBrazilDate(new Date());
+  return br.getUTCFullYear();
+}
+
+/**
+ * Retorna o início de um mês específico no horário de Brasília como Date UTC.
+ * @param {number} month 1-12
+ * @param {number} year ex: 2025
+ */
+function startOfMonthBR(month, year) {
+  const m = String(month).padStart(2, '0');
+  return new Date(`${year}-${m}-01T00:00:00-03:00`);
+}
+
+/**
+ * Retorna o fim de um mês específico no horário de Brasília como Date UTC.
+ * @param {number} month 1-12
+ * @param {number} year ex: 2025
+ */
+function endOfMonthBR(month, year) {
+  // Último dia do mês: dia 0 do mês seguinte
+  const lastDay = new Date(year, month, 0).getDate();
+  const m = String(month).padStart(2, '0');
+  const d = String(lastDay).padStart(2, '0');
+  return new Date(`${year}-${m}-${d}T23:59:59.999-03:00`);
+}
+
+/**
+ * Retorna um Date para o início de um dia específico (string 'YYYY-MM-DD') no fuso de Brasília.
+ */
+function startOfDayBR(dateStr) {
+  return new Date(dateStr + 'T00:00:00-03:00');
+}
+
+/**
+ * Retorna um Date para o fim de um dia específico (string 'YYYY-MM-DD') no fuso de Brasília.
+ */
+function endOfDayBR(dateStr) {
+  return new Date(dateStr + 'T23:59:59.999-03:00');
+}
+
+module.exports = {
+  startOfTodayBR, endOfTodayBR, formatBR, todayBR, TZ,
+  currentMonthBR, currentYearBR, startOfMonthBR, endOfMonthBR,
+  startOfDayBR, endOfDayBR, toBrazilDate
+};

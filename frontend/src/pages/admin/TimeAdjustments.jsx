@@ -2,8 +2,13 @@ import { useState, useEffect } from 'react';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
 import { FiEdit2, FiPlus, FiTrash2, FiClock, FiAlertCircle, FiCamera, FiX } from 'react-icons/fi';
 import AdminLayout from '../../components/AdminLayout';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 export default function TimeAdjustments() {
   const [employees, setEmployees] = useState([]);
@@ -93,7 +98,7 @@ export default function TimeAdjustments() {
 
   function openEdit(entry) {
     setCurrentEntry(entry);
-    setForm({ ...form, timestamp: dayjs(entry.timestamp).format('YYYY-MM-DDTHH:mm'), reason: '' });
+    setForm({ ...form, timestamp: dayjs(entry.timestamp).tz('America/Sao_Paulo').format('YYYY-MM-DDTHH:mm'), reason: '' });
     setShowEditModal(true);
   }
 
@@ -230,7 +235,7 @@ export default function TimeAdjustments() {
               <tbody className="divide-y divide-gray-100">
                 {logs.map(log => (
                   <tr key={log.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-3 text-sm text-gray-600">{dayjs(log.createdAt).format('DD/MM/YYYY HH:mm')}</td>
+                    <td className="px-6 py-3 text-sm text-gray-600">{dayjs(log.createdAt).tz('America/Sao_Paulo').format('DD/MM/YYYY HH:mm')}</td>
                     <td className="px-6 py-3 text-sm font-medium">{log.employee?.name}</td>
                     <td className="px-6 py-3">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${actionColors[log.action] || ''}`}>
