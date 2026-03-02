@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import 'dayjs/locale/pt-br';
-import { FiClock, FiMapPin, FiCheckCircle, FiLogOut, FiCamera, FiAlertTriangle, FiList } from 'react-icons/fi';
+import { FiClock, FiMapPin, FiCheckCircle, FiLogOut, FiCamera, FiAlertTriangle, FiList, FiWifiOff } from 'react-icons/fi';
 import SelfieCapture from '../../components/SelfieCapture';
+import OfflineBanner from '../../components/OfflineBanner';
+import useOfflineQueue, { enqueueOfflinePunch } from '../../hooks/useOfflineQueue';
 
 dayjs.locale('pt-br');
 
@@ -23,6 +25,14 @@ export default function PunchClock() {
   const [requireSelfie, setRequireSelfie] = useState(false);
   const [hourBankBalance, setHourBankBalance] = useState(null);
   const [geoWarning, setGeoWarning] = useState(null);
+
+  // Função da API encapsulada em useCallback para o hook de offline
+  const apiPunch = useCallback(async (data) => {
+    const response = await api.post('/time-entries/punch', data);
+    return response;
+  }, []);
+
+  const { isOnline, pendingCount, isSyncing, syncQueue } = useOfflineQueue(apiPunch);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(dayjs()), 1000);
@@ -72,14 +82,45 @@ export default function PunchClock() {
 
     setLoading(true);
     setGeoWarning(null);
+
+    const punchData = {
+      latitude: location?.latitude,
+      longitude: location?.longitude,
+      deviceInfo: navigator.userAgent,
+      photo: photo || selfieData || undefined
+    };
+
+    // MODO OFFLINE: sem internet → enfileira no IndexedDB
+    if (!isOnline) {
+      try {
+        await enqueueOfflinePunch(punchData);
+        setSelfieData(null);
+        toast('📶 Sem conexão — ponto salvo localmente e será enviado ao voltar online.', {
+          icon: '📋',
+          duration: 5000,
+          style: { background: '#f97316', color: 'white' }
+        });
+        // Atualiza UI local otimisticamente
+        setTodayEntries(prev => [
+          ...prev,
+          {
+            type: nextPunch || 'CLOCK_IN',
+            typeLabel: '(offline) ' + (nextPunch || 'Entrada'),
+            time: dayjs().format('HH:mm'),
+            offline: true
+          }
+        ]);
+      } catch {
+        toast.error('Erro ao salvar ponto offline');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // MODO ONLINE: envia normalmente
     try {
-      const data = {
-        latitude: location?.latitude,
-        longitude: location?.longitude,
-        deviceInfo: navigator.userAgent,
-        photo: photo || selfieData || undefined
-      };
-      const response = await api.post('/time-entries/punch', data);
+      const response = await api.post('/time-entries/punch', punchData);
       toast.success(response.data.message);
       if (response.data.warning) {
         setGeoWarning(response.data.warning);
@@ -87,8 +128,20 @@ export default function PunchClock() {
       setSelfieData(null);
       fetchTodayEntries();
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Erro ao registrar ponto');
-    } finally { setLoading(false); }
+      // Se perdeu a conexão no meio do processo, salva offline
+      if (!navigator.onLine || error.code === 'ERR_NETWORK') {
+        await enqueueOfflinePunch(punchData);
+        toast('📋 Conexão perdida — ponto salvo localmente.', {
+          icon: '📶',
+          duration: 5000,
+          style: { background: '#f97316', color: 'white' }
+        });
+      } else {
+        toast.error(error.response?.data?.error || 'Erro ao registrar ponto');
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   function onSelfieCapture(dataUrl) {
@@ -108,6 +161,15 @@ export default function PunchClock() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       {showCamera && <SelfieCapture onCapture={onSelfieCapture} onCancel={() => setShowCamera(false)} />}
+
+      {/* Banner de offline / pendentes */}
+      <OfflineBanner
+        isOnline={isOnline}
+        pendingCount={pendingCount}
+        isSyncing={isSyncing}
+        onSync={syncQueue}
+      />
+
       <header className="bg-white shadow-sm px-4 py-3 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-gray-800">Ponto Digital</h1>
@@ -176,16 +238,24 @@ export default function PunchClock() {
                 </p>
               )}
               <button onClick={() => handlePunch()} disabled={loading}
-                className="w-40 h-40 rounded-full bg-blue-600 text-white text-lg font-bold shadow-lg hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center mx-auto">
+                className={`w-40 h-40 rounded-full text-white text-lg font-bold shadow-lg active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center mx-auto ${
+                  !isOnline
+                    ? 'bg-orange-500 hover:bg-orange-600'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}>
                 {loading ? (
                   <div className="animate-spin w-8 h-8 border-4 border-white border-t-transparent rounded-full" />
                 ) : (
                   <div className="flex flex-col items-center gap-1">
-                    {requireSelfie
-                      ? <FiCamera className="w-8 h-8" />
-                      : <FiClock className="w-8 h-8" />
+                    {!isOnline
+                      ? <FiWifiOff className="w-8 h-8" />
+                      : requireSelfie
+                        ? <FiCamera className="w-8 h-8" />
+                        : <FiClock className="w-8 h-8" />
                     }
-                    <span className="text-sm">{requireSelfie ? 'SELFIE + PONTO' : 'BATER PONTO'}</span>
+                    <span className="text-sm">
+                      {!isOnline ? 'PONTO OFFLINE' : requireSelfie ? 'SELFIE + PONTO' : 'BATER PONTO'}
+                    </span>
                   </div>
                 )}
               </button>

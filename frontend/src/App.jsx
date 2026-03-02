@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import InstallPWA from './components/InstallPWA';
 
 // Lazy loading para performance
 const Landing = lazy(() => import('./pages/Landing'));
@@ -60,6 +61,7 @@ export default function App() {
       <AuthProvider>
         <AppRoutes />
         <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
+        <InstallPWA />
       </AuthProvider>
     </BrowserRouter>
   );
