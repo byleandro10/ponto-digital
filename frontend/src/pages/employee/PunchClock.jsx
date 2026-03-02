@@ -34,7 +34,9 @@ export default function PunchClock() {
   async function fetchCompanyConfig() {
     try {
       const res = await api.get('/geofences/config');
-      setRequireSelfie(res.data.requireSelfie || false);
+      // O backend retorna { config: { requireSelfie, geofenceMode, ... } }
+      const config = res.data.config || res.data;
+      setRequireSelfie(config.requireSelfie || false);
     } catch (err) { /* empresa pode não ter config */ }
   }
 
@@ -167,13 +169,24 @@ export default function PunchClock() {
             </div>
           ) : (
             <>
-              <p className="text-gray-500 text-sm mb-3">Próximo registro: <strong>{nextPunch}</strong></p>
+              <p className="text-gray-500 text-sm mb-1">Próximo registro: <strong>{nextPunch}</strong></p>
+              {requireSelfie && (
+                <p className="text-blue-500 text-xs mb-3 flex items-center justify-center gap-1">
+                  <FiCamera className="w-3 h-3" /> A câmera será aberta para tirar a selfie
+                </p>
+              )}
               <button onClick={() => handlePunch()} disabled={loading}
                 className="w-40 h-40 rounded-full bg-blue-600 text-white text-lg font-bold shadow-lg hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center mx-auto">
                 {loading ? (
                   <div className="animate-spin w-8 h-8 border-4 border-white border-t-transparent rounded-full" />
                 ) : (
-                  <div><FiClock className="w-8 h-8 mx-auto mb-1" /><span className="text-sm">BATER PONTO</span></div>
+                  <div className="flex flex-col items-center gap-1">
+                    {requireSelfie
+                      ? <FiCamera className="w-8 h-8" />
+                      : <FiClock className="w-8 h-8" />
+                    }
+                    <span className="text-sm">{requireSelfie ? 'SELFIE + PONTO' : 'BATER PONTO'}</span>
+                  </div>
                 )}
               </button>
             </>
