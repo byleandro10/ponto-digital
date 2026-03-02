@@ -68,12 +68,12 @@ async function register(req, res) {
       company: { id: company.id, name: company.name }
     });
   } catch (error) {
-    console.error('Erro ao registrar empresa:', error.message);
+    console.error('Erro ao registrar empresa:', error.message, error.stack);
     if (error.code === 'P2002') {
       const field = error.meta?.target?.includes('email') ? 'E-mail' : 'CNPJ';
       return res.status(400).json({ error: `${field} já cadastrado.` });
     }
-    res.status(500).json({ error: 'Erro ao registrar empresa. Tente novamente.' });
+    res.status(500).json({ error: 'Erro ao registrar empresa. Tente novamente.', debug: error.message });
   }
 }
 
