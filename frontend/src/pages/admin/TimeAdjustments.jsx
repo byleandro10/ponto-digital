@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
-import { FiArrowLeft, FiEdit2, FiPlus, FiTrash2, FiClock, FiAlertCircle } from 'react-icons/fi';
+import { FiArrowLeft, FiEdit2, FiPlus, FiTrash2, FiClock, FiAlertCircle, FiCamera, FiX } from 'react-icons/fi';
 
 export default function TimeAdjustments() {
   const [employees, setEmployees] = useState([]);
@@ -111,6 +111,7 @@ export default function TimeAdjustments() {
   const typeLabels = { CLOCK_IN: 'Entrada', BREAK_START: 'Almoço Ida', BREAK_END: 'Almoço Volta', CLOCK_OUT: 'Saída' };
   const actionLabels = { EDIT: 'Editou', ADD: 'Adicionou', DELETE: 'Removeu' };
   const actionColors = { EDIT: 'bg-yellow-100 text-yellow-700', ADD: 'bg-green-100 text-green-700', DELETE: 'bg-red-100 text-red-700' };
+  const [showPhoto, setShowPhoto] = useState(null);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -157,7 +158,7 @@ export default function TimeAdjustments() {
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
-                    {['Tipo', 'Horário', 'Observação', 'Ações'].map(h => (
+                    {['Tipo', 'Horário', 'Selfie', 'Localização', 'Observação', 'Ações'].map(h => (
                       <th key={h} className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">{h}</th>
                     ))}
                   </tr>
@@ -169,6 +170,32 @@ export default function TimeAdjustments() {
                         <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">{entry.typeLabel}</span>
                       </td>
                       <td className="px-6 py-4 font-mono text-sm font-bold">{entry.time}</td>
+                      <td className="px-6 py-4">
+                        {entry.photo ? (
+                          <button
+                            onClick={() => setShowPhoto(entry.photo)}
+                            className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs font-medium"
+                          >
+                            <FiCamera className="w-4 h-4" />
+                            <img src={entry.photo} alt="selfie" className="w-8 h-8 rounded-full object-cover border border-gray-200 ml-1" />
+                          </button>
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-xs text-gray-500 max-w-[140px]">
+                        {entry.latitude && entry.longitude ? (
+                          <a
+                            href={`https://www.google.com/maps?q=${entry.latitude},${entry.longitude}`}
+                            target="_blank" rel="noopener noreferrer"
+                            className="text-blue-500 hover:underline"
+                          >
+                            {Number(entry.latitude).toFixed(5)},<br/>{Number(entry.longitude).toFixed(5)}
+                          </a>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-500">
                         {entry.adjustmentNote && (
                           <span className="flex items-center gap-1 text-yellow-600">
@@ -183,7 +210,7 @@ export default function TimeAdjustments() {
                     </tr>
                   ))}
                   {entries.length === 0 && (
-                    <tr><td colSpan={4} className="text-center text-gray-400 py-8">Nenhum registro nesta data.</td></tr>
+                    <tr><td colSpan={6} className="text-center text-gray-400 py-8">Nenhum registro nesta data.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -304,6 +331,27 @@ export default function TimeAdjustments() {
                 <button type="button" onClick={() => setShowDeleteModal(false)} className="flex-1 bg-gray-100 text-gray-700 py-2 rounded-lg hover:bg-gray-200">Cancelar</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de selfie */}
+      {showPhoto && (
+        <div
+          className="fixed inset-0 bg-black/85 flex items-center justify-center p-4"
+          style={{ zIndex: 9999 }}
+          onClick={() => setShowPhoto(null)}
+        >
+          <div className="bg-white rounded-2xl overflow-hidden max-w-sm w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                <FiCamera className="w-4 h-4 text-blue-600" /> Selfie do Registro
+              </h3>
+              <button onClick={() => setShowPhoto(null)} className="text-gray-400 hover:text-red-500">
+                <FiX className="w-5 h-5" />
+              </button>
+            </div>
+            <img src={showPhoto} alt="Selfie do ponto" className="w-full object-cover" style={{ maxHeight: '440px' }} />
           </div>
         </div>
       )}

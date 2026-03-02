@@ -6,7 +6,7 @@ import api from '../../services/api';
 import toast from 'react-hot-toast';
 import {
   FiArrowLeft, FiMapPin, FiFilter, FiUsers, FiAlertTriangle,
-  FiCheckCircle, FiXCircle, FiClock, FiCamera, FiRefreshCw
+  FiCheckCircle, FiXCircle, FiClock, FiCamera, FiRefreshCw, FiX, FiUser
 } from 'react-icons/fi';
 
 // Fix ícones do Leaflet no Vite/Webpack
@@ -386,99 +386,213 @@ export default function PunchMapPage() {
             )}
           </div>
 
-          {/* Painel lateral: lista de batidas */}
+          {/* Painel lateral: lista + detalhes */}
           <div className="bg-white rounded-xl shadow overflow-hidden flex flex-col">
-            <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
-              <h2 className="font-bold text-gray-800 flex items-center gap-2">
-                <FiUsers className="w-4 h-4" /> Registros
-              </h2>
-              <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
-                {visibleMarkers.length} com local
-              </span>
-            </div>
-            <div className="overflow-y-auto flex-1" style={{ maxHeight: '460px' }}>
-              {visibleMarkers.length === 0 ? (
-                <div className="p-6 text-center text-gray-400">
-                  <FiMapPin className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">Nenhum registro com localização.</p>
+            {/* Se há marcador selecionado, mostra painel de detalhes */}
+            {selectedMarker ? (
+              <div className="flex flex-col h-full">
+                <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
+                  <h2 className="font-bold text-gray-800 text-sm flex items-center gap-2">
+                    <FiUser className="w-4 h-4" /> Detalhes do Registro
+                  </h2>
+                  <button onClick={() => setSelectedMarker(null)} className="text-gray-400 hover:text-red-500">
+                    <FiX className="w-4 h-4" />
+                  </button>
                 </div>
-              ) : (
-                visibleMarkers.map(marker => (
-                  <button
-                    key={marker.id}
-                    onClick={() => setSelectedMarker(marker)}
-                    className={`w-full text-left px-4 py-3 border-b hover:bg-blue-50 transition ${
-                      selectedMarker?.id === marker.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
-                    }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      <div
-                        className="w-3 h-3 rounded-full mt-1 flex-shrink-0"
-                        style={{ background: marker.color }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1">
-                          <p className="text-sm font-semibold text-gray-800 truncate">
-                            {marker.employeeName}
-                          </p>
-                          <span className="text-xs font-mono text-gray-600 flex-shrink-0">
-                            {marker.time}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-500">{marker.typeLabel}</p>
-                        {marker.distanceFromFence != null && (
-                          <p className={`text-xs font-medium mt-0.5 ${
-                            marker.insideGeofence ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                            {marker.insideGeofence
-                              ? `✓ ${marker.distanceFromFence}m do centro`
-                              : `✗ ${marker.distanceFromFence}m fora (raio: ${marker.fenceRadius}m)`
-                            }
-                          </p>
-                        )}
-                        {marker.address && (
-                          <p className="text-xs text-gray-400 truncate mt-0.5">{marker.address}</p>
-                        )}
-                      </div>
-                      {marker.photo && (
-                        <FiCamera className="w-3.5 h-3.5 text-blue-400 flex-shrink-0 mt-0.5" />
+                <div className="overflow-y-auto flex-1 p-4 space-y-3">
+                  {/* Badge tipo */}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="px-3 py-1 rounded-full text-white text-xs font-bold"
+                      style={{ background: selectedMarker.color }}
+                    >
+                      {selectedMarker.typeLabel}
+                    </span>
+                    {selectedMarker.insideGeofence === true && (
+                      <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium flex items-center gap-1">
+                        <FiCheckCircle className="w-3 h-3" /> Dentro da cerca
+                      </span>
+                    )}
+                    {selectedMarker.insideGeofence === false && (
+                      <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium flex items-center gap-1">
+                        <FiAlertTriangle className="w-3 h-3" /> Fora da cerca
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Dados do funcionário */}
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="font-bold text-gray-800">{selectedMarker.employeeName}</p>
+                    {selectedMarker.employeePosition && (
+                      <p className="text-xs text-gray-500">{selectedMarker.employeePosition}</p>
+                    )}
+                    <p className="text-sm text-gray-700 mt-1 flex items-center gap-1">
+                      <FiClock className="w-3.5 h-3.5" /> {selectedMarker.time}
+                    </p>
+                  </div>
+
+                  {/* Localização */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Localização</p>
+                    <p className="text-xs font-mono text-gray-600 bg-gray-50 rounded px-2 py-1">
+                      {selectedMarker.latitude.toFixed(6)}, {selectedMarker.longitude.toFixed(6)}
+                    </p>
+                    {selectedMarker.address && (
+                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">{selectedMarker.address}</p>
+                    )}
+                  </div>
+
+                  {/* Distância da cerca */}
+                  {selectedMarker.distanceFromFence != null && (
+                    <div className={`rounded-lg p-3 ${selectedMarker.insideGeofence ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                      <p className="text-xs font-semibold mb-0.5" style={{ color: selectedMarker.insideGeofence ? '#15803d' : '#dc2626' }}>
+                        {selectedMarker.insideGeofence ? '✓ Dentro da cerca virtual' : '✗ Fora da cerca virtual'}
+                      </p>
+                      <p className="text-xs text-gray-600">
+                        Distância do centro: <strong>{selectedMarker.distanceFromFence}m</strong>
+                        {selectedMarker.fenceRadius && ` (raio: ${selectedMarker.fenceRadius}m)`}
+                      </p>
+                      {selectedMarker.geofenceName && (
+                        <p className="text-xs text-gray-500 mt-0.5">Cerca: {selectedMarker.geofenceName}</p>
                       )}
                     </div>
+                  )}
+
+                  {/* Selfie */}
+                  {selectedMarker.photo ? (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2 flex items-center gap-1">
+                        <FiCamera className="w-3 h-3" /> Selfie do Registro
+                      </p>
+                      <img
+                        src={selectedMarker.photo}
+                        alt="Selfie do ponto"
+                        className="w-full rounded-xl object-cover cursor-pointer hover:opacity-90 transition border border-gray-200"
+                        style={{ maxHeight: '280px' }}
+                        onClick={() => setShowPhoto(selectedMarker.photo)}
+                      />
+                      <button
+                        onClick={() => setShowPhoto(selectedMarker.photo)}
+                        className="mt-2 w-full text-center text-xs text-blue-600 hover:underline"
+                      >
+                        Ampliar foto
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-gray-400 text-xs bg-gray-50 rounded-lg p-3">
+                      <FiCamera className="w-4 h-4" />
+                      <span>Nenhuma selfie registrada</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Botão voltar para lista */}
+                <div className="p-3 border-t bg-gray-50">
+                  <button
+                    onClick={() => setSelectedMarker(null)}
+                    className="w-full text-sm text-gray-600 hover:text-blue-600 flex items-center justify-center gap-1"
+                  >
+                    ← Ver lista completa
                   </button>
-                ))
-              )}
-            </div>
-            {/* Aviso de registros sem localização */}
-            {mapData?.totalWithoutLocation > 0 && (
-              <div className="px-4 py-2 bg-yellow-50 border-t border-yellow-200">
-                <p className="text-xs text-yellow-700 flex items-center gap-1">
-                  <FiAlertTriangle className="w-3 h-3" />
-                  {mapData.totalWithoutLocation} registro(s) sem localização (não exibidos no mapa)
-                </p>
+                </div>
               </div>
+            ) : (
+              /* Lista de registros */
+              <>
+                <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
+                  <h2 className="font-bold text-gray-800 flex items-center gap-2">
+                    <FiUsers className="w-4 h-4" /> Registros
+                  </h2>
+                  <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
+                    {visibleMarkers.length} com local
+                  </span>
+                </div>
+                <div className="overflow-y-auto flex-1" style={{ maxHeight: '460px' }}>
+                  {visibleMarkers.length === 0 ? (
+                    <div className="p-6 text-center text-gray-400">
+                      <FiMapPin className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                      <p className="text-sm">Nenhum registro com localização.</p>
+                    </div>
+                  ) : (
+                    visibleMarkers.map(marker => (
+                      <button
+                        key={marker.id}
+                        onClick={() => setSelectedMarker(marker)}
+                        className="w-full text-left px-4 py-3 border-b hover:bg-blue-50 transition"
+                      >
+                        <div className="flex items-start gap-2">
+                          <div
+                            className="w-3 h-3 rounded-full mt-1 flex-shrink-0"
+                            style={{ background: marker.color }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1">
+                              <p className="text-sm font-semibold text-gray-800 truncate">
+                                {marker.employeeName}
+                              </p>
+                              <span className="text-xs font-mono text-gray-600 flex-shrink-0">
+                                {marker.time}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-500">{marker.typeLabel}</p>
+                            {marker.distanceFromFence != null && (
+                              <p className={`text-xs font-medium mt-0.5 ${
+                                marker.insideGeofence ? 'text-green-600' : 'text-red-600'
+                              }`}>
+                                {marker.insideGeofence
+                                  ? `✓ ${marker.distanceFromFence}m do centro`
+                                  : `✗ ${marker.distanceFromFence}m fora (raio: ${marker.fenceRadius}m)`
+                                }
+                              </p>
+                            )}
+                            {marker.address && (
+                              <p className="text-xs text-gray-400 truncate mt-0.5">{marker.address}</p>
+                            )}
+                          </div>
+                          {marker.photo && (
+                            <FiCamera className="w-3.5 h-3.5 text-blue-400 flex-shrink-0 mt-0.5" title="Tem selfie" />
+                          )}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+                {/* Aviso de registros sem localização */}
+                {mapData?.totalWithoutLocation > 0 && (
+                  <div className="px-4 py-2 bg-yellow-50 border-t border-yellow-200">
+                    <p className="text-xs text-yellow-700 flex items-center gap-1">
+                      <FiAlertTriangle className="w-3 h-3" />
+                      {mapData.totalWithoutLocation} registro(s) sem localização (não exibidos no mapa)
+                    </p>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
       </div>
 
-      {/* Modal de selfie */}
+      {/* Modal de selfie ampliada — z-[9999] acima do Leaflet */}
       {showPhoto && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/85 flex items-center justify-center p-4"
+          style={{ zIndex: 9999 }}
           onClick={() => setShowPhoto(null)}
         >
-          <div className="bg-white rounded-2xl overflow-hidden max-w-xs w-full" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl overflow-hidden max-w-sm w-full shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b">
               <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                <FiCamera className="w-4 h-4" /> Selfie do Registro
+                <FiCamera className="w-4 h-4 text-blue-600" /> Selfie do Registro
               </h3>
-              <button onClick={() => setShowPhoto(null)} className="text-gray-400 hover:text-red-500 text-xl">×</button>
+              <button onClick={() => setShowPhoto(null)} className="text-gray-400 hover:text-red-500">
+                <FiX className="w-5 h-5" />
+              </button>
             </div>
             <img
               src={showPhoto}
               alt="Selfie do ponto"
               className="w-full object-cover"
-              style={{ maxHeight: '400px' }}
+              style={{ maxHeight: '440px' }}
             />
           </div>
         </div>

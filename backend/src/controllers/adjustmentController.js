@@ -225,7 +225,11 @@ async function getEntriesByDate(req, res) {
         time: dayjs(e.timestamp).format('HH:mm:ss'),
         adjustedBy: e.adjustedBy,
         adjustmentNote: e.adjustmentNote,
-        originalTimestamp: e.originalTimestamp
+        originalTimestamp: e.originalTimestamp,
+        photo: e.photo || null,
+        latitude: e.latitude || null,
+        longitude: e.longitude || null,
+        address: e.address || null
       }))
     });
   } catch (error) {

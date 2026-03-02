@@ -145,8 +145,8 @@ export default function Geofences() {
           </button>
         </div>
 
-        {/* Mapa visão geral */}
-        <div className="bg-white rounded-xl shadow overflow-hidden">
+        {/* Mapa visão geral — isolation:isolate impede z-index do Leaflet de vazar para o modal */}
+        <div className="bg-white rounded-xl shadow overflow-hidden" style={{ isolation: 'isolate' }}>
           <div className="px-4 py-3 border-b flex items-center gap-2">
             <FiMap className="w-4 h-4 text-blue-600" />
             <h2 className="font-semibold text-gray-700">Visão Geral — Todas as Cercas</h2>
@@ -252,9 +252,9 @@ export default function Geofences() {
         </div>
       </div>
 
-      {/* Modal com mapa interativo */}
+      {/* Modal com mapa interativo — z-[9999] para ficar acima do Leaflet */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4" style={{ zIndex: 9999 }}>
           <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[95vh] overflow-y-auto shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-800">
