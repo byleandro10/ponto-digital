@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
-import { FiArrowLeft, FiClock, FiCalendar, FiChevronDown, FiChevronUp, FiLogOut, FiFileText, FiEdit2 } from 'react-icons/fi';
+import { FiClock, FiCalendar, FiChevronDown, FiChevronUp } from 'react-icons/fi';
+import EmployeeLayout from '../../components/EmployeeLayout';
 
 const TYPE_LABELS = {
   CLOCK_IN: 'Entrada',
@@ -19,7 +18,6 @@ const TYPE_COLORS = {
 };
 
 export default function MyHistory() {
-  const { user, logout } = useAuth();
   const [days, setDays] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState({});
@@ -72,33 +70,8 @@ export default function MyHistory() {
   const totalFormatted = `${String(Math.floor(totalMinutes / 60)).padStart(2, '0')}:${String(totalMinutes % 60).padStart(2, '0')}`;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm px-4 py-3 flex items-center justify-between sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          <Link to="/employee/punch" className="text-gray-400 hover:text-blue-600">
-            <FiArrowLeft className="w-5 h-5" />
-          </Link>
-          <div>
-            <h1 className="text-base font-bold text-gray-800">Meu Histórico</h1>
-            <p className="text-xs text-gray-500">{user?.company?.name}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link to="/employee/punch-mirror" className="text-gray-400 hover:text-green-600" title="Espelho de Ponto">
-            <FiFileText className="w-5 h-5" />
-          </Link>
-          <Link to="/employee/adjustments" className="text-gray-400 hover:text-orange-500" title="Solicitar Ajuste">
-            <FiEdit2 className="w-5 h-5" />
-          </Link>
-          <span className="text-sm text-gray-600 hidden sm:block">{user?.name}</span>
-          <button onClick={logout} className="text-gray-400 hover:text-red-500" title="Sair">
-            <FiLogOut className="w-5 h-5" />
-          </button>
-        </div>
-      </header>
-
-      <div className="max-w-lg mx-auto p-4 space-y-4 pb-8">
+    <EmployeeLayout>
+      <div className="max-w-lg mx-auto p-4 space-y-4 pb-4">
         {/* Filtro de período */}
         <form onSubmit={handleFilter} className="bg-white rounded-2xl shadow p-4">
           <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
@@ -207,6 +180,6 @@ export default function MyHistory() {
           </div>
         )}
       </div>
-    </div>
+    </EmployeeLayout>
   );
 }

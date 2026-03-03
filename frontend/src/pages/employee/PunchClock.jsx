@@ -1,19 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import 'dayjs/locale/pt-br';
-import { FiClock, FiMapPin, FiCheckCircle, FiLogOut, FiCamera, FiAlertTriangle, FiList, FiWifiOff, FiLock, FiEye, FiEyeOff, FiX, FiFileText, FiEdit2, FiShield } from 'react-icons/fi';
+import { FiClock, FiMapPin, FiCheckCircle, FiCamera, FiAlertTriangle, FiWifiOff, FiLock, FiEye, FiEyeOff, FiX } from 'react-icons/fi';
 import SelfieCapture from '../../components/SelfieCapture';
 import OfflineBanner from '../../components/OfflineBanner';
+import EmployeeLayout from '../../components/EmployeeLayout';
 import useOfflineQueue, { enqueueOfflinePunch } from '../../hooks/useOfflineQueue';
 
 dayjs.locale('pt-br');
 
 export default function PunchClock() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [currentTime, setCurrentTime] = useState(dayjs());
   const [todayEntries, setTodayEntries] = useState([]);
   const [nextPunch, setNextPunch] = useState('');
@@ -201,8 +201,7 @@ export default function PunchClock() {
   };
 
   return (
-    <>
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+    <EmployeeLayout onChangePassword={() => setShowPwdModal(true)}>
       {showCamera && <SelfieCapture onCapture={onSelfieCapture} onCancel={() => setShowCamera(false)} />}
 
       {/* Banner de offline / pendentes */}
@@ -213,58 +212,7 @@ export default function PunchClock() {
         onSync={syncQueue}
       />
 
-      <header className="bg-white shadow-sm px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          {user?.company?.logoUrl ? (
-            <img
-              src={user.company.logoUrl}
-              alt={user.company.name}
-              className="w-8 h-8 rounded-lg object-contain"
-            />
-          ) : null}
-          <div>
-            <h1 className="text-lg font-bold text-gray-800">Ponto Digital</h1>
-            <p className="text-xs text-gray-500">{user?.company?.name}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link
-            to="/employee/history"
-            className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800"
-            title="Meu Histórico"
-          >
-            <FiList className="w-4 h-4" />
-            <span className="hidden sm:inline">Histórico</span>
-          </Link>
-          <Link
-            to="/employee/punch-mirror"
-            className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-800"
-            title="Espelho de Ponto"
-          >
-            <FiFileText className="w-4 h-4" />
-            <span className="hidden sm:inline">Espelho</span>
-          </Link>
-          <Link
-            to="/employee/adjustments"
-            className="flex items-center gap-1 text-sm text-yellow-600 hover:text-yellow-800"
-            title="Solicitar Ajuste"
-          >
-            <FiEdit2 className="w-4 h-4" />
-            <span className="hidden sm:inline">Ajuste</span>
-          </Link>
-          <button
-            onClick={() => setShowPwdModal(true)}
-            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800"
-            title="Alterar Senha"
-          >
-            <FiLock className="w-4 h-4" />
-            <span className="hidden sm:inline">Senha</span>
-          </button>
-          <span className="text-sm text-gray-600">{user?.name}</span>
-          <button onClick={logout} className="text-gray-400 hover:text-red-500"><FiLogOut /></button>
-        </div>
-      </header>
-      <div className="max-w-lg mx-auto p-4 space-y-6 mt-4">
+      <div className="max-w-lg mx-auto p-4 space-y-6">
         <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
           <p className="text-gray-500 text-sm capitalize">{currentTime.format('dddd, DD [de] MMMM [de] YYYY')}</p>
           <p className="text-6xl font-bold text-gray-800 mt-2 font-mono">{currentTime.format('HH:mm:ss')}</p>
@@ -360,7 +308,6 @@ export default function PunchClock() {
           )}
         </div>
       </div>
-    </div>
 
       {/* Modal Alterar Senha — Funcionário */}
       {showPwdModal && (
@@ -454,6 +401,6 @@ export default function PunchClock() {
         </div>
       </div>
     )}
-    </>
+    </EmployeeLayout>
   );
 }
