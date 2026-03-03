@@ -12,6 +12,8 @@ const reportRoutes = require('./routes/reportRoutes');
 const geofenceRoutes = require('./routes/geofenceRoutes');
 const adjustmentRoutes = require('./routes/adjustmentRoutes');
 const exportRoutes = require('./routes/exportRoutes');
+const adjustmentRequestRoutes = require('./routes/adjustmentRequestRoutes');
+const employeeSelfServiceRoutes = require('./routes/employeeSelfServiceRoutes');
 
 const app = express();
 
@@ -33,6 +35,8 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/geofences', geofenceRoutes);
 app.use('/api/adjustments', adjustmentRoutes);
 app.use('/api/export', exportRoutes);
+app.use('/api/adjustment-requests', adjustmentRequestRoutes);
+app.use('/api/employee', employeeSelfServiceRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });

@@ -10,10 +10,14 @@ const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
 const PunchClock = lazy(() => import('./pages/employee/PunchClock'));
 const MyHistory = lazy(() => import('./pages/employee/MyHistory'));
+const MyPunchMirror = lazy(() => import('./pages/employee/MyPunchMirror'));
+const MyAdjustments = lazy(() => import('./pages/employee/MyAdjustments'));
+const MyAuditLog = lazy(() => import('./pages/employee/MyAuditLog'));
 const Dashboard = lazy(() => import('./pages/admin/Dashboard'));
 const Employees = lazy(() => import('./pages/admin/Employees'));
 const Reports = lazy(() => import('./pages/admin/Reports'));
 const TimeAdjustments = lazy(() => import('./pages/admin/TimeAdjustments'));
+const AdjustmentRequests = lazy(() => import('./pages/admin/AdjustmentRequests'));
 const Geofences = lazy(() => import('./pages/admin/Geofences'));
 const Settings = lazy(() => import('./pages/admin/Settings'));
 const PunchMapPage = lazy(() => import('./pages/admin/PunchMapPage'));
@@ -42,10 +46,14 @@ function AppRoutes() {
         <Route path="/register" element={<Register />} />
         <Route path="/employee/punch" element={<PrivateRoute type="employee"><PunchClock /></PrivateRoute>} />
         <Route path="/employee/history" element={<PrivateRoute type="employee"><MyHistory /></PrivateRoute>} />
+        <Route path="/employee/punch-mirror" element={<PrivateRoute type="employee"><MyPunchMirror /></PrivateRoute>} />
+        <Route path="/employee/adjustments" element={<PrivateRoute type="employee"><MyAdjustments /></PrivateRoute>} />
+        <Route path="/employee/audit-log" element={<PrivateRoute type="employee"><MyAuditLog /></PrivateRoute>} />
         <Route path="/admin/dashboard" element={<PrivateRoute type="admin"><Dashboard /></PrivateRoute>} />
         <Route path="/admin/employees" element={<PrivateRoute type="admin"><Employees /></PrivateRoute>} />
         <Route path="/admin/reports" element={<PrivateRoute type="admin"><Reports /></PrivateRoute>} />
         <Route path="/admin/adjustments" element={<PrivateRoute type="admin"><TimeAdjustments /></PrivateRoute>} />
+        <Route path="/admin/adjustment-requests" element={<PrivateRoute type="admin"><AdjustmentRequests /></PrivateRoute>} />
         <Route path="/admin/geofences" element={<PrivateRoute type="admin"><Geofences /></PrivateRoute>} />
         <Route path="/admin/settings" element={<PrivateRoute type="admin"><Settings /></PrivateRoute>} />
         <Route path="/admin/punch-map" element={<PrivateRoute type="admin"><PunchMapPage /></PrivateRoute>} />

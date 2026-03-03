@@ -2,6 +2,7 @@ const prisma = require('../config/database');
 const { checkGeofence } = require('../services/geofenceService');
 const { calculateWorkedHours, calculateOvertime } = require('../utils/calculateHours');
 const { startOfTodayBR, endOfTodayBR, formatBR, todayBR } = require('../utils/brazilTime');
+const { generateEntryHash } = require('../utils/integrity');
 
 async function clockPunch(req, res) {
   try {
@@ -75,6 +76,13 @@ async function clockPunch(req, res) {
 
     const entry = await prisma.timeEntry.create({
       data: { employeeId, type, latitude, longitude, address, deviceInfo, photo, notes, insideGeofence, geofenceName }
+    });
+
+    // Gerar hash de integridade (assinatura eletrônica)
+    const integrityHash = generateEntryHash(entry);
+    await prisma.timeEntry.update({
+      where: { id: entry.id },
+      data: { integrityHash }
     });
 
     // Banco de horas: calcular saldo ao registrar CLOCK_OUT
@@ -173,7 +181,7 @@ async function getHistory(req, res) {
       const worked = calculateWorkedHours(dayEntries);
       return {
         date: formatBR(new Date(date + 'T12:00:00-03:00'), 'DD/MM/YYYY'),
-        entries: dayEntries.map(e => ({ type: e.type, time: formatBR(e.timestamp, 'HH:mm:ss'), address: e.address })),
+        entries: dayEntries.map(e => ({ id: e.id, type: e.type, time: formatBR(e.timestamp, 'HH:mm:ss'), address: e.address })),
         totalWorked: worked.formatted
       };
     });

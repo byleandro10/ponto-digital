@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
-import { FiArrowLeft, FiClock, FiCalendar, FiChevronDown, FiChevronUp, FiLogOut } from 'react-icons/fi';
+import { FiArrowLeft, FiClock, FiCalendar, FiChevronDown, FiChevronUp, FiLogOut, FiFileText, FiEdit2 } from 'react-icons/fi';
 
 const TYPE_LABELS = {
   CLOCK_IN: 'Entrada',
@@ -85,6 +85,12 @@ export default function MyHistory() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <Link to="/employee/punch-mirror" className="text-gray-400 hover:text-green-600" title="Espelho de Ponto">
+            <FiFileText className="w-5 h-5" />
+          </Link>
+          <Link to="/employee/adjustments" className="text-gray-400 hover:text-orange-500" title="Solicitar Ajuste">
+            <FiEdit2 className="w-5 h-5" />
+          </Link>
           <span className="text-sm text-gray-600 hidden sm:block">{user?.name}</span>
           <button onClick={logout} className="text-gray-400 hover:text-red-500" title="Sair">
             <FiLogOut className="w-5 h-5" />

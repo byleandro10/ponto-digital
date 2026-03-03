@@ -5,7 +5,7 @@ import api from '../../services/api';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import 'dayjs/locale/pt-br';
-import { FiClock, FiMapPin, FiCheckCircle, FiLogOut, FiCamera, FiAlertTriangle, FiList, FiWifiOff, FiLock, FiEye, FiEyeOff, FiX } from 'react-icons/fi';
+import { FiClock, FiMapPin, FiCheckCircle, FiLogOut, FiCamera, FiAlertTriangle, FiList, FiWifiOff, FiLock, FiEye, FiEyeOff, FiX, FiFileText, FiEdit2, FiShield } from 'react-icons/fi';
 import SelfieCapture from '../../components/SelfieCapture';
 import OfflineBanner from '../../components/OfflineBanner';
 import useOfflineQueue, { enqueueOfflinePunch } from '../../hooks/useOfflineQueue';
@@ -235,6 +235,22 @@ export default function PunchClock() {
           >
             <FiList className="w-4 h-4" />
             <span className="hidden sm:inline">Histórico</span>
+          </Link>
+          <Link
+            to="/employee/punch-mirror"
+            className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-800"
+            title="Espelho de Ponto"
+          >
+            <FiFileText className="w-4 h-4" />
+            <span className="hidden sm:inline">Espelho</span>
+          </Link>
+          <Link
+            to="/employee/adjustments"
+            className="flex items-center gap-1 text-sm text-yellow-600 hover:text-yellow-800"
+            title="Solicitar Ajuste"
+          >
+            <FiEdit2 className="w-4 h-4" />
+            <span className="hidden sm:inline">Ajuste</span>
           </Link>
           <button
             onClick={() => setShowPwdModal(true)}

@@ -2,19 +2,16 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  FiUsers, FiClock, FiLogOut, FiFileText, FiEdit2,
-  FiMapPin, FiSettings, FiMap, FiGrid, FiMenu, FiX, FiInbox
+  FiClock, FiLogOut, FiFileText, FiEdit2,
+  FiList, FiMenu, FiX, FiShield
 } from 'react-icons/fi';
 
-export const NAV_ITEMS = [
-  { to: '/admin/dashboard',            icon: FiGrid,     label: 'Painel',              color: 'text-blue-500' },
-  { to: '/admin/employees',            icon: FiUsers,    label: 'Funcionários',         color: 'text-indigo-500' },
-  { to: '/admin/reports',              icon: FiFileText, label: 'Relatórios',           color: 'text-green-500' },
-  { to: '/admin/adjustments',          icon: FiEdit2,    label: 'Ajuste de Ponto',      color: 'text-yellow-500' },
-  { to: '/admin/adjustment-requests',  icon: FiInbox,    label: 'Solicitações',         color: 'text-orange-500' },
-  { to: '/admin/punch-map',            icon: FiMap,      label: 'Mapa de Batidas',      color: 'text-purple-500' },
-  { to: '/admin/geofences',            icon: FiMapPin,   label: 'Cercas Virtuais',      color: 'text-red-500' },
-  { to: '/admin/settings',             icon: FiSettings, label: 'Configurações',        color: 'text-gray-500' },
+const NAV_ITEMS = [
+  { to: '/employee/punch',        icon: FiClock,    label: 'Bater Ponto',      color: 'text-blue-500' },
+  { to: '/employee/history',      icon: FiList,     label: 'Meu Histórico',    color: 'text-green-500' },
+  { to: '/employee/punch-mirror', icon: FiFileText, label: 'Espelho de Ponto', color: 'text-indigo-500' },
+  { to: '/employee/adjustments',  icon: FiEdit2,    label: 'Solicitar Ajuste', color: 'text-yellow-500' },
+  { to: '/employee/audit-log',    icon: FiShield,   label: 'Alterações',       color: 'text-red-500' },
 ];
 
 function Sidebar({ open, onClose, user, logout }) {
@@ -81,12 +78,12 @@ function Sidebar({ open, onClose, user, logout }) {
         {/* Usuário */}
         <div className="px-4 py-4 border-t border-gray-100">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-              {user?.name?.[0]?.toUpperCase() || 'A'}
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-500 to-teal-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+              {user?.name?.[0]?.toUpperCase() || 'F'}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-gray-800 truncate">{user?.name || 'Admin'}</p>
-              <p className="text-xs text-gray-400">Administrador</p>
+              <p className="text-sm font-semibold text-gray-800 truncate">{user?.name || 'Funcionário'}</p>
+              <p className="text-xs text-gray-400">{user?.position || 'Funcionário'}</p>
             </div>
             <button onClick={logout} title="Sair" className="text-gray-400 hover:text-red-500 transition">
               <FiLogOut className="w-4 h-4" />
@@ -99,12 +96,10 @@ function Sidebar({ open, onClose, user, logout }) {
 }
 
 /**
- * Layout padrão para páginas administrativas.
+ * Layout padrão para páginas do funcionário.
  * Inclui sidebar, topbar responsivo e área de conteúdo.
- *
- * @param {{ title: string, children: React.ReactNode }} props
  */
-export default function AdminLayout({ title, children }) {
+export default function EmployeeLayout({ title, children }) {
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -121,6 +116,7 @@ export default function AdminLayout({ title, children }) {
           <h1 className="text-base font-bold text-gray-900 flex-1">{title}</h1>
         </header>
 
+        {/* Conteúdo */}
         <main className="flex-1 overflow-auto">
           {children}
         </main>

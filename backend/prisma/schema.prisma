@@ -70,6 +70,7 @@ model Employee {
   timeEntries   TimeEntry[]
   notifications Notification[]
   adjustmentLogs TimeAdjustmentLog[]
+  adjustmentRequests AdjustmentRequest[]
 }
 
 model TimeEntry {
@@ -89,9 +90,11 @@ model TimeEntry {
   adjustedAt     DateTime?
   adjustmentNote String?
   originalTimestamp DateTime? // timestamp original antes do ajuste
+  integrityHash  String?  // SHA-256 para garantir imutabilidade do registro
   createdAt  DateTime @default(now())
 
   employee Employee @relation(fields: [employeeId], references: [id])
+  adjustmentRequests AdjustmentRequest[]
 }
 
 model TimeAdjustmentLog {
@@ -106,6 +109,25 @@ model TimeAdjustmentLog {
   createdAt   DateTime @default(now())
 
   employee Employee @relation(fields: [employeeId], references: [id])
+}
+
+model AdjustmentRequest {
+  id            String   @id @default(uuid())
+  employeeId    String
+  entryId       String?  // registro existente (null = solicitar adição)
+  requestType   String   // EDIT | ADD | DELETE
+  currentValue  String?  // JSON do valor atual
+  requestedValue String? // JSON do valor desejado (ex: { timestamp: "...", type: "CLOCK_IN" })
+  reason        String   // justificativa obrigatória do funcionário
+  status        String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  reviewedBy    String?  // userId do admin que revisou
+  reviewedAt    DateTime?
+  reviewNote    String?  // nota do admin ao aprovar/rejeitar
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  employee  Employee   @relation(fields: [employeeId], references: [id])
+  timeEntry TimeEntry? @relation(fields: [entryId], references: [id])
 }
 
 model Geofence {

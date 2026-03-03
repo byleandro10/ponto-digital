@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { authMiddleware } = require('../middlewares/auth');
+const { authMiddleware, employeeAuth } = require('../middlewares/auth');
 const { roleGuard } = require('../middlewares/roleGuard');
 const { getMonthlyReport, getDashboardStats, getPunchMapData } = require('../controllers/reportController');
 router.use(authMiddleware);
