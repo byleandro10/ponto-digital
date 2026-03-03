@@ -188,9 +188,9 @@ export default function Checkout() {
         plan: selectedPlan.toLowerCase(),
       });
 
-      const { token, user: userData, company } = registerRes.data;
+      const { token, user: userData, company, subscriptionStatus, trialEndsAt } = registerRes.data;
       localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify({ ...userData, company, type: 'admin' }));
+      localStorage.setItem('user', JSON.stringify({ ...userData, company, type: 'admin', subscriptionStatus: subscriptionStatus || 'TRIAL', trialEndsAt }));
 
       // 3. Criar assinatura com trial
       if (cardTokenId) {

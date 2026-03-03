@@ -11,7 +11,11 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const requestUrl = error.config?.url || '';
+    const isAuthRoute = requestUrl.includes('/auth/');
+
+    if (error.response?.status === 401 && !isAuthRoute) {
+      // Token expirado/inválido — só redireciona se NÃO for rota de login/registro
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';

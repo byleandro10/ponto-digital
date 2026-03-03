@@ -91,6 +91,7 @@ async function register(req, res) {
       token,
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
       company: { id: company.id, name: company.name, plan: company.plan },
+      subscriptionStatus: 'TRIAL',
       trialEndsAt
     });
   } catch (error) {

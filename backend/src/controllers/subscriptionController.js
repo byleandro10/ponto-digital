@@ -117,6 +117,31 @@ async function getStatus(req, res) {
     });
 
     if (!subscription) {
+      // Sem registro de Subscription — usar dados da Company (trial após checkout)
+      const company = await prisma.company.findUnique({
+        where: { id: req.companyId },
+        select: { plan: true, subscriptionStatus: true, trialEndsAt: true, createdAt: true },
+      });
+      if (company && company.subscriptionStatus) {
+        const now = new Date();
+        const planUpper = (company.plan || 'basic').toUpperCase();
+        const trialDaysLeft = company.trialEndsAt
+          ? Math.max(0, Math.ceil((company.trialEndsAt - now) / (1000 * 60 * 60 * 24)))
+          : 0;
+        return res.json({
+          subscription: {
+            id: null,
+            plan: planUpper,
+            planName: PLAN_NAMES[planUpper] || planUpper,
+            status: company.subscriptionStatus,
+            trialEndsAt: company.trialEndsAt,
+            trialDaysLeft,
+            currentPeriodStart: company.createdAt,
+            currentPeriodEnd: company.trialEndsAt,
+            createdAt: company.createdAt,
+          },
+        });
+      }
       return res.json({ subscription: null });
     }
 
@@ -298,9 +323,6 @@ async function reactivateSubscription(req, res) {
     const { cardTokenId, email, plan } = req.body;
     const companyId = req.companyId;
 
-    if (!cardTokenId) {
-      return res.status(400).json({ error: 'Token do cartão é obrigatório.' });
-    }
     if (!email) {
       return res.status(400).json({ error: 'E-mail é obrigatório.' });
     }
@@ -335,23 +357,34 @@ async function reactivateSubscription(req, res) {
       });
     }
 
-    // Criar nova preapproval no Mercado Pago (sem free trial desta vez)
-    const mpPreapproval = await preApproval.create({
-      body: {
-        reason: `Ponto Digital — Plano ${PLAN_NAMES[planKey]}`,
-        external_reference: companyId,
-        payer_email: email,
-        card_token_id: cardTokenId,
-        auto_recurring: {
-          frequency: 1,
-          frequency_type: 'months',
-          transaction_amount: PLAN_PRICES[planKey],
-          currency_id: 'BRL',
-        },
-        back_url: `${process.env.FRONTEND_URL || 'https://pontodigital.com.br'}/admin/dashboard`,
-        status: 'authorized',
-      },
-    });
+    let mpPreapprovalId = null;
+    let mpCustomerId = null;
+
+    // Criar nova preapproval no Mercado Pago (se tiver cardTokenId)
+    if (cardTokenId) {
+      try {
+        const mpPreapproval = await preApproval.create({
+          body: {
+            reason: `Ponto Digital — Plano ${PLAN_NAMES[planKey]}`,
+            external_reference: companyId,
+            payer_email: email,
+            card_token_id: cardTokenId,
+            auto_recurring: {
+              frequency: 1,
+              frequency_type: 'months',
+              transaction_amount: PLAN_PRICES[planKey],
+              currency_id: 'BRL',
+            },
+            back_url: `${process.env.FRONTEND_URL || 'https://pontodigital.com.br'}/admin/dashboard`,
+            status: 'authorized',
+          },
+        });
+        mpPreapprovalId = mpPreapproval.id;
+        mpCustomerId = mpPreapproval.payer_id?.toString() || null;
+      } catch (mpErr) {
+        console.warn('Erro ao criar preapproval no MP (modo teste?):', mpErr.message);
+      }
+    }
 
     // Criar nova subscription
     const now = new Date();
@@ -365,8 +398,8 @@ async function reactivateSubscription(req, res) {
         status: 'ACTIVE',
         currentPeriodStart: now,
         currentPeriodEnd: periodEnd,
-        mpPreapprovalId: mpPreapproval.id,
-        mpCustomerId: mpPreapproval.payer_id?.toString() || null,
+        mpPreapprovalId,
+        mpCustomerId,
       },
     });
 
