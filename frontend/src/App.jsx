@@ -51,7 +51,7 @@ function AppRoutes() {
       <Routes>
         <Route path="/" element={signed ? <Navigate to={defaultRedirect} /> : <Landing />} />
         <Route path="/login" element={signed ? <Navigate to={defaultRedirect} /> : <Login />} />
-        <Route path="/register" element={<Register />} />
+        <Route path="/register" element={<Navigate to="/checkout" />} />
         <Route path="/checkout" element={<Checkout />} />
         <Route path="/checkout/:plan" element={<Checkout />} />
         <Route path="/employee/punch" element={<PrivateRoute type="employee"><PunchClock /></PrivateRoute>} />

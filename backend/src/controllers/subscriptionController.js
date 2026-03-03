@@ -289,4 +289,109 @@ async function getPayments(req, res) {
   }
 }
 
-module.exports = { createPreapproval, getStatus, changePlan, cancelSubscription, getPayments, PLAN_PRICES, PLAN_NAMES };
+/**
+ * POST /api/subscriptions/reactivate
+ * Reativar assinatura expirada/cancelada com novo cartão de crédito
+ */
+async function reactivateSubscription(req, res) {
+  try {
+    const { cardTokenId, email, plan } = req.body;
+    const companyId = req.companyId;
+
+    if (!cardTokenId) {
+      return res.status(400).json({ error: 'Token do cartão é obrigatório.' });
+    }
+    if (!email) {
+      return res.status(400).json({ error: 'E-mail é obrigatório.' });
+    }
+
+    // Buscar a empresa
+    const company = await prisma.company.findUnique({ where: { id: companyId } });
+    if (!company) {
+      return res.status(404).json({ error: 'Empresa não encontrada.' });
+    }
+
+    // Determinar plano — usar o informado ou o atual da empresa
+    const selectedPlan = (plan && PLAN_PRICES[plan]) ? plan : (company.plan || 'basic').toUpperCase();
+    const planKey = PLAN_PRICES[selectedPlan] ? selectedPlan : 'BASIC';
+
+    // Cancelar assinatura ativa anterior no MP se existir
+    const previous = await prisma.subscription.findFirst({
+      where: { companyId, status: { in: ['PAST_DUE', 'ACTIVE', 'TRIAL'] } },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (previous?.mpPreapprovalId) {
+      try {
+        await preApproval.update({
+          id: previous.mpPreapprovalId,
+          body: { status: 'cancelled' },
+        });
+      } catch (e) {
+        console.error('Erro ao cancelar preapproval antigo:', e.message);
+      }
+      await prisma.subscription.update({
+        where: { id: previous.id },
+        data: { status: 'CANCELLED', cancelledAt: new Date() },
+      });
+    }
+
+    // Criar nova preapproval no Mercado Pago (sem free trial desta vez)
+    const mpPreapproval = await preApproval.create({
+      body: {
+        reason: `Ponto Digital — Plano ${PLAN_NAMES[planKey]}`,
+        external_reference: companyId,
+        payer_email: email,
+        card_token_id: cardTokenId,
+        auto_recurring: {
+          frequency: 1,
+          frequency_type: 'months',
+          transaction_amount: PLAN_PRICES[planKey],
+          currency_id: 'BRL',
+        },
+        back_url: `${process.env.FRONTEND_URL || 'https://pontodigital.com.br'}/admin/dashboard`,
+        status: 'authorized',
+      },
+    });
+
+    // Criar nova subscription
+    const now = new Date();
+    const periodEnd = new Date(now);
+    periodEnd.setDate(periodEnd.getDate() + 30);
+
+    const subscription = await prisma.subscription.create({
+      data: {
+        companyId,
+        plan: planKey,
+        status: 'ACTIVE',
+        currentPeriodStart: now,
+        currentPeriodEnd: periodEnd,
+        mpPreapprovalId: mpPreapproval.id,
+        mpCustomerId: mpPreapproval.payer_id?.toString() || null,
+      },
+    });
+
+    // Atualizar Company para ACTIVE
+    await prisma.company.update({
+      where: { id: companyId },
+      data: {
+        plan: planKey.toLowerCase(),
+        subscriptionStatus: 'ACTIVE',
+        trialEndsAt: null,
+      },
+    });
+
+    res.json({
+      message: `Assinatura reativada com sucesso! Plano ${PLAN_NAMES[planKey]}.`,
+      subscription: {
+        id: subscription.id,
+        plan: planKey,
+        status: 'ACTIVE',
+      },
+    });
+  } catch (error) {
+    console.error('Erro ao reativar assinatura:', error);
+    res.status(500).json({ error: 'Erro ao reativar assinatura. Verifique os dados do cartão e tente novamente.' });
+  }
+}
+
+module.exports = { createPreapproval, getStatus, changePlan, cancelSubscription, getPayments, reactivateSubscription, PLAN_PRICES, PLAN_NAMES };

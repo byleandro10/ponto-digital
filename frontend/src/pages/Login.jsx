@@ -23,9 +23,20 @@ export default function Login() {
         toast.success('Bem-vindo!');
         navigate('/employee/punch');
       } else {
-        await loginAdmin(email, password);
+        const data = await loginAdmin(email, password);
         toast.success('Bem-vindo!');
-        navigate('/admin/dashboard');
+        // SUPER_ADMIN vai direto
+        if (data.user?.role === 'SUPER_ADMIN') {
+          navigate('/super-admin/dashboard');
+        } else if (['CANCELLED', 'EXPIRED'].includes(data.subscriptionStatus)) {
+          navigate('/admin/subscription');
+        } else if (data.subscriptionStatus === 'TRIAL' && data.trialEndsAt && new Date(data.trialEndsAt) < new Date()) {
+          navigate('/admin/subscription');
+        } else if (data.subscriptionStatus === 'PAST_DUE') {
+          navigate('/admin/subscription');
+        } else {
+          navigate('/admin/dashboard');
+        }
       }
     } catch (error) {
       toast.error(error.response?.data?.error || 'Erro ao fazer login');
@@ -78,7 +89,7 @@ export default function Login() {
         </form>
         <p className="text-center text-sm text-gray-500 mt-6">
           Não tem conta?{' '}
-          <Link to="/register" className="text-blue-600 hover:underline font-medium">Cadastrar empresa</Link>
+          <Link to="/checkout" className="text-blue-600 hover:underline font-medium">Contratar plano</Link>
         </p>
       </div>
     </div>

@@ -16,9 +16,9 @@ export function AuthProvider({ children }) {
 
   async function loginAdmin(email, password) {
     const response = await api.post('/auth/login/admin', { email, password });
-    const { token, user: userData, company } = response.data;
+    const { token, user: userData, company, subscriptionStatus, trialEndsAt } = response.data;
     localStorage.setItem('token', token);
-    const userObj = { ...userData, company, type: 'admin' };
+    const userObj = { ...userData, company, type: 'admin', subscriptionStatus, trialEndsAt };
     localStorage.setItem('user', JSON.stringify(userObj));
     setUser(userObj);
     return response.data;

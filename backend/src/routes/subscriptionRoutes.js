@@ -7,6 +7,7 @@ const {
   changePlan,
   cancelSubscription,
   getPayments,
+  reactivateSubscription,
 } = require('../controllers/subscriptionController');
 
 // Todas as rotas requerem autenticação
@@ -17,5 +18,6 @@ router.get('/status', getStatus);
 router.put('/change-plan', changePlan);
 router.post('/cancel', cancelSubscription);
 router.get('/payments', getPayments);
+router.post('/reactivate', reactivateSubscription);
 
 module.exports = router;
