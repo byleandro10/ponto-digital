@@ -1,15 +1,38 @@
 const prisma = require('../config/database');
+const jwt = require('jsonwebtoken');
 
 /**
- * Middleware que verifica se a empresa do usuário tem assinatura válida.
+ * Middleware que autentica o usuário (decodifica JWT) E verifica assinatura.
+ * Combina authMiddleware + verificação de subscription em um único middleware.
  * Permite acesso se: TRIAL (dentro do prazo), ACTIVE, ou PAST_DUE (carência 3 dias).
- * Bloqueia com HTTP 402 caso contrário.
+ * Bloqueia com HTTP 401 se token inválido, 402 se assinatura inativa.
  *
- * SUPER_ADMIN é isento deste guard.
+ * SUPER_ADMIN é isento do guard de assinatura.
  */
 async function subscriptionGuard(req, res, next) {
   try {
-    // SUPER_ADMIN sempre tem acesso
+    // 1. Autenticar — decodificar JWT e popular req.userId, req.userRole, req.companyId
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token não fornecido.' });
+    }
+    const token = authHeader.split(' ')[1];
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ error: 'Token inválido ou expirado.' });
+    }
+    req.userId = decoded.id;
+    req.userRole = decoded.role;
+    req.companyId = decoded.companyId;
+    req.userType = decoded.type;
+    // Para rotas de funcionário
+    if (decoded.type === 'employee') {
+      req.employeeId = decoded.id;
+    }
+
+    // 2. SUPER_ADMIN sempre tem acesso
     if (req.userRole === 'SUPER_ADMIN') {
       return next();
     }
