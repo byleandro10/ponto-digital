@@ -3,6 +3,22 @@ const bcrypt = require('bcryptjs');
 const { generateToken } = require('../utils/generateToken');
 const { isValidEmail, isValidCNPJ, formatCNPJ, isValidPassword, sanitize } = require('../utils/validators');
 
+// Rastreamento de login direto (sem middleware, pois login não tem req.companyId)
+async function _trackLoginDirect(companyId, type) {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const field = type === 'admin' ? 'adminLogins' : 'employeeLogins';
+    await prisma.usageLog.upsert({
+      where: { companyId_date: { companyId, date: today } },
+      create: { companyId, date: today, [field]: 1 },
+      update: { [field]: { increment: 1 } },
+    });
+  } catch (err) {
+    console.error('Erro ao rastrear login:', err.message);
+  }
+}
+
 async function register(req, res) {
   try {
     let { companyName, cnpj, name, email, password } = req.body;
@@ -49,10 +65,19 @@ async function register(req, res) {
       return res.status(400).json({ error: 'E-mail já cadastrado.' });
     }
     const hashedPassword = await bcrypt.hash(password, 12);
+    // Calcular trial de 30 dias
+    const trialEndsAt = new Date();
+    trialEndsAt.setDate(trialEndsAt.getDate() + 30);
+
+    const plan = sanitize(req.body.plan) || 'basic';
+
     const company = await prisma.company.create({
       data: {
         name: companyName,
         cnpj,
+        plan,
+        subscriptionStatus: 'TRIAL',
+        trialEndsAt,
         users: {
           create: { name, email, password: hashedPassword, role: 'ADMIN' }
         }
@@ -65,7 +90,8 @@ async function register(req, res) {
       message: 'Empresa cadastrada com sucesso!',
       token,
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
-      company: { id: company.id, name: company.name }
+      company: { id: company.id, name: company.name, plan: company.plan },
+      trialEndsAt
     });
   } catch (error) {
     console.error('Erro ao registrar empresa:', error.message);
@@ -92,6 +118,8 @@ async function loginAdmin(req, res) {
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) return res.status(401).json({ error: 'Credenciais inválidas.' });
     const token = generateToken({ id: user.id, role: user.role, companyId: user.companyId, type: 'admin' });
+    // Rastrear login admin (fire & forget)
+    _trackLoginDirect(user.companyId, 'admin').catch(() => {});
     res.json({
       token,
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
@@ -115,6 +143,8 @@ async function loginEmployee(req, res) {
     const validPassword = await bcrypt.compare(password, employee.password);
     if (!validPassword) return res.status(401).json({ error: 'Credenciais inválidas.' });
     const token = generateToken({ id: employee.id, companyId: employee.companyId, type: 'employee' });
+    // Rastrear login funcionário (fire & forget)
+    _trackLoginDirect(employee.companyId, 'employee').catch(() => {});
     res.json({
       token,
       employee: { id: employee.id, name: employee.name, cpf: employee.cpf, position: employee.position },

@@ -8,6 +8,7 @@ import InstallPWA from './components/InstallPWA';
 const Landing = lazy(() => import('./pages/Landing'));
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
+const Checkout = lazy(() => import('./pages/Checkout'));
 const PunchClock = lazy(() => import('./pages/employee/PunchClock'));
 const MyHistory = lazy(() => import('./pages/employee/MyHistory'));
 const MyPunchMirror = lazy(() => import('./pages/employee/MyPunchMirror'));
@@ -21,6 +22,11 @@ const AdjustmentRequests = lazy(() => import('./pages/admin/AdjustmentRequests')
 const Geofences = lazy(() => import('./pages/admin/Geofences'));
 const Settings = lazy(() => import('./pages/admin/Settings'));
 const PunchMapPage = lazy(() => import('./pages/admin/PunchMapPage'));
+const AdminSubscription = lazy(() => import('./pages/admin/Subscription'));
+const SADashboard = lazy(() => import('./pages/superadmin/SADashboard'));
+const SACompanies = lazy(() => import('./pages/superadmin/SACompanies'));
+const SARevenue = lazy(() => import('./pages/superadmin/SARevenue'));
+const SAUsage = lazy(() => import('./pages/superadmin/SAUsage'));
 
 const LoadingSpinner = () => (
   <div className="min-h-screen flex items-center justify-center">
@@ -32,18 +38,22 @@ function PrivateRoute({ children, type }) {
   const { signed, user, loading } = useAuth();
   if (loading) return <LoadingSpinner />;
   if (!signed) return <Navigate to="/login" />;
-  if (type && user?.type !== type) return <Navigate to={user?.type === 'admin' ? '/admin/dashboard' : '/employee/punch'} />;
+  if (type === 'super_admin' && user?.role !== 'SUPER_ADMIN') return <Navigate to="/admin/dashboard" />;
+  if (type && type !== 'super_admin' && user?.type !== type) return <Navigate to={user?.role === 'SUPER_ADMIN' ? '/super-admin/dashboard' : user?.type === 'admin' ? '/admin/dashboard' : '/employee/punch'} />;
   return children;
 }
 
 function AppRoutes() {
   const { signed, user } = useAuth();
+  const defaultRedirect = user?.role === 'SUPER_ADMIN' ? '/super-admin/dashboard' : user?.type === 'admin' ? '/admin/dashboard' : '/employee/punch';
   return (
     <Suspense fallback={<LoadingSpinner />}>
       <Routes>
-        <Route path="/" element={signed ? <Navigate to={user?.type === 'admin' ? '/admin/dashboard' : '/employee/punch'} /> : <Landing />} />
-        <Route path="/login" element={signed ? <Navigate to={user?.type === 'admin' ? '/admin/dashboard' : '/employee/punch'} /> : <Login />} />
+        <Route path="/" element={signed ? <Navigate to={defaultRedirect} /> : <Landing />} />
+        <Route path="/login" element={signed ? <Navigate to={defaultRedirect} /> : <Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/checkout" element={<Checkout />} />
+        <Route path="/checkout/:plan" element={<Checkout />} />
         <Route path="/employee/punch" element={<PrivateRoute type="employee"><PunchClock /></PrivateRoute>} />
         <Route path="/employee/history" element={<PrivateRoute type="employee"><MyHistory /></PrivateRoute>} />
         <Route path="/employee/punch-mirror" element={<PrivateRoute type="employee"><MyPunchMirror /></PrivateRoute>} />
@@ -57,6 +67,11 @@ function AppRoutes() {
         <Route path="/admin/geofences" element={<PrivateRoute type="admin"><Geofences /></PrivateRoute>} />
         <Route path="/admin/settings" element={<PrivateRoute type="admin"><Settings /></PrivateRoute>} />
         <Route path="/admin/punch-map" element={<PrivateRoute type="admin"><PunchMapPage /></PrivateRoute>} />
+        <Route path="/admin/subscription" element={<PrivateRoute type="admin"><AdminSubscription /></PrivateRoute>} />
+        <Route path="/super-admin/dashboard" element={<PrivateRoute type="super_admin"><SADashboard /></PrivateRoute>} />
+        <Route path="/super-admin/companies" element={<PrivateRoute type="super_admin"><SACompanies /></PrivateRoute>} />
+        <Route path="/super-admin/revenue" element={<PrivateRoute type="super_admin"><SARevenue /></PrivateRoute>} />
+        <Route path="/super-admin/usage" element={<PrivateRoute type="super_admin"><SAUsage /></PrivateRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Suspense>

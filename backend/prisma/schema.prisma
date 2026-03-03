@@ -18,6 +18,8 @@ model Company {
   logoUrl   String?
   requireSelfie Boolean @default(false)
   geofenceMode  String  @default("off") // off | warn | block
+  subscriptionStatus String @default("TRIAL") // TRIAL | ACTIVE | PAST_DUE | CANCELLED | EXPIRED
+  trialEndsAt        DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -25,6 +27,9 @@ model Company {
   employees           Employee[]
   notificationSetting NotificationSetting?
   geofences           Geofence[]
+  subscriptions       Subscription[]
+  payments            Payment[]
+  usageLogs           UsageLog[]
 }
 
 model User {
@@ -32,12 +37,12 @@ model User {
   name      String
   email     String   @unique
   password  String
-  role      String   @default("ADMIN")
-  companyId String
+  role      String   @default("ADMIN") // ADMIN | SUPER_ADMIN | MANAGER
+  companyId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  company Company @relation(fields: [companyId], references: [id])
+  company Company? @relation(fields: [companyId], references: [id])
 }
 
 model Employee {
@@ -165,4 +170,57 @@ model NotificationSetting {
   clockOutReminderTime String  @default("17:50")
 
   company Company @relation(fields: [companyId], references: [id])
+}
+
+model Subscription {
+  id                 String    @id @default(uuid())
+  companyId          String
+  plan               String    // BASIC | PROFESSIONAL | ENTERPRISE
+  status             String    @default("TRIAL") // TRIAL | ACTIVE | PAST_DUE | CANCELLED | EXPIRED
+  trialEndsAt        DateTime?
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  mpPreapprovalId    String?   // ID da assinatura no Mercado Pago
+  mpCustomerId       String?
+  cancelledAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  company  Company   @relation(fields: [companyId], references: [id])
+  payments Payment[]
+
+  @@index([companyId])
+}
+
+model Payment {
+  id              String    @id @default(uuid())
+  subscriptionId  String
+  companyId       String
+  mpPaymentId     String?   // ID do pagamento no Mercado Pago
+  amount          Decimal
+  status          String    @default("PENDING") // PENDING | APPROVED | REJECTED | REFUNDED
+  paidAt          DateTime?
+  createdAt       DateTime  @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  company      Company      @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+  @@index([subscriptionId])
+}
+
+model UsageLog {
+  id              String   @id @default(uuid())
+  companyId       String
+  date            DateTime @db.Date
+  activeEmployees Int      @default(0)
+  totalPunches    Int      @default(0)
+  adminLogins     Int      @default(0)
+  employeeLogins  Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, date])
+  @@index([companyId])
 }

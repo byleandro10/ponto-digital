@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authMiddleware, employeeAuth } = require('../middlewares/auth');
 const { roleGuard } = require('../middlewares/roleGuard');
+const { geofenceAccessGuard } = require('../middlewares/planLimitGuard');
 const { listGeofences, createGeofence, updateGeofence, deleteGeofence, updateGeofenceConfig, getCompanyConfig, uploadCompanyLogo, removeCompanyLogo } = require('../controllers/geofenceController');
 
 // /config pode ser acessada por admin OU funcionário autenticado
@@ -28,9 +29,9 @@ router.get('/config', flexAuth, getCompanyConfig);
 router.put('/config', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), updateGeofenceConfig);
 router.put('/logo', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), uploadCompanyLogo);
 router.delete('/logo', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), removeCompanyLogo);
-router.get('/', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN', 'MANAGER'), listGeofences);
-router.post('/', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), createGeofence);
-router.put('/:id', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), updateGeofence);
-router.delete('/:id', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), deleteGeofence);
+router.get('/', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN', 'MANAGER'), geofenceAccessGuard(), listGeofences);
+router.post('/', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), geofenceAccessGuard(), createGeofence);
+router.put('/:id', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), geofenceAccessGuard(), updateGeofence);
+router.delete('/:id', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), geofenceAccessGuard(), deleteGeofence);
 
 module.exports = router;

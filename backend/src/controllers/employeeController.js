@@ -1,6 +1,7 @@
 const prisma = require('../config/database');
 const bcrypt = require('bcryptjs');
 const { isValidEmail, isValidCPF, formatCPF, isValidPassword, isValidPhone, sanitize } = require('../utils/validators');
+const { updateActiveEmployees } = require('../middlewares/usageTracker');
 
 async function createEmployee(req, res) {
   try {
@@ -73,6 +74,9 @@ async function createEmployee(req, res) {
       message: 'Funcionário cadastrado com sucesso!',
       employee: { id: employee.id, name: employee.name, cpf: employee.cpf, email: employee.email, position: employee.position, department: employee.department }
     });
+
+    // Atualizar métricas de uso (fire & forget)
+    updateActiveEmployees(req.companyId).catch(() => {});
   } catch (error) {
     console.error('Erro ao cadastrar funcionário:', error.message);
     if (error.code === 'P2002') {

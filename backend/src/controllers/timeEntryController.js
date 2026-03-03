@@ -3,6 +3,7 @@ const { checkGeofence } = require('../services/geofenceService');
 const { calculateWorkedHours, calculateOvertime } = require('../utils/calculateHours');
 const { startOfTodayBR, endOfTodayBR, formatBR, todayBR } = require('../utils/brazilTime');
 const { generateEntryHash } = require('../utils/integrity');
+const { trackPunch } = require('../middlewares/usageTracker');
 
 async function clockPunch(req, res) {
   try {
@@ -107,6 +108,9 @@ async function clockPunch(req, res) {
     if (insideGeofence === false) {
       responseData.warning = `Ponto registrado fora da cerca virtual "${geofenceName}".`;
     }
+
+    // Rastrear punch para métricas de uso (fire & forget)
+    trackPunch(employee.companyId).catch(() => {});
 
     res.status(201).json(responseData);
   } catch (error) {

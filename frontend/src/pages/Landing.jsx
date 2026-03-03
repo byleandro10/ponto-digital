@@ -13,9 +13,9 @@ const features = [
 ];
 
 const plans = [
-  { name: 'Básico', price: 49, period: '/mês', employees: 'Até 10 funcionários', features: ['Ponto digital com GPS', 'Dashboard em tempo real', 'Relatório mensal', 'Suporte por e-mail', 'PWA (funciona offline)'], cta: 'Começar Grátis', highlight: false },
-  { name: 'Profissional', price: 99, period: '/mês', employees: 'Até 30 funcionários', features: ['Tudo do Básico', 'Selfie anti-fraude', 'Cerca virtual (geofencing)', 'Exportação PDF/Excel', 'Banco de horas', 'Suporte prioritário'], cta: 'Teste Grátis 14 dias', highlight: true },
-  { name: 'Empresarial', price: 199, period: '/mês', employees: 'Funcionários ilimitados', features: ['Tudo do Profissional', 'API de integração', 'Multi-filiais', 'Relatórios avançados', 'Gerente de conta dedicado', 'SLA 99.9%'], cta: 'Falar com Vendas', highlight: false },
+  { name: 'Básico', price: 49, period: '/mês', employees: 'Até 15 funcionários', slug: 'basic', features: ['Ponto digital com GPS', 'Dashboard em tempo real', 'Relatório mensal', 'Suporte por e-mail', 'PWA (funciona offline)'], cta: 'Começar Grátis', highlight: false },
+  { name: 'Profissional', price: 99, period: '/mês', employees: 'Até 50 funcionários', slug: 'professional', features: ['Tudo do Básico', 'Selfie anti-fraude', 'Cerca virtual (geofencing)', 'Exportação PDF/Excel/CSV', 'Banco de horas', 'Suporte prioritário'], cta: 'Experimente 30 dias grátis', highlight: true },
+  { name: 'Empresarial', price: 199, period: '/mês', employees: 'Funcionários ilimitados', slug: 'enterprise', features: ['Tudo do Profissional', 'API de integração', 'Multi-filiais', 'Relatórios avançados', 'Gerente de conta dedicado', 'SLA 99.9%'], cta: 'Experimente 30 dias grátis', highlight: false },
 ];
 
 const testimonials = [
@@ -26,11 +26,11 @@ const testimonials = [
 
 const faqs = [
   { q: 'Preciso instalar algum aplicativo?', a: 'Não. O Ponto Digital é um PWA (Progressive Web App). Basta acessar pelo navegador do celular e adicionar à tela inicial. Funciona como um app nativo, inclusive offline.' },
-  { q: 'Como funciona o período de teste?', a: 'Você tem 14 dias grátis no plano Profissional com todas as funcionalidades. Não pedimos cartão de crédito. Se gostar, assina. Se não, sem compromisso.' },
+  { q: 'Como funciona o período de teste?', a: 'Você tem 30 dias grátis com todas as funcionalidades do plano escolhido. Cadastre seu cartão de crédito no momento do registro — você NÃO será cobrado durante o trial. Se não cancelar, a cobrança inicia automaticamente após os 30 dias.' },
   { q: 'E se o funcionário estiver sem internet?', a: 'O sistema funciona offline. O ponto é registrado localmente e sincronizado automaticamente quando a conexão voltar.' },
   { q: 'Posso exportar para meu contador?', a: 'Sim! Exportamos espelho de ponto individual e consolidado em PDF, Excel (.xlsx) e CSV, compatível com os principais sistemas contábeis.' },
-  { q: 'Como funciona a cobrança?', a: 'Planos mensais via Pix, boleto ou cartão. Você pode trocar de plano ou cancelar a qualquer momento, sem multa.' },
-  { q: 'O sistema é seguro?', a: 'Sim. Usamos criptografia em todas as conexões (HTTPS), senhas com hash bcrypt, tokens JWT e rate-limiting contra ataques.' },
+  { q: 'Como funciona a cobrança?', a: 'Ao se cadastrar, você registra seu cartão de crédito e ganha 30 dias grátis. Após o período, a cobrança mensal é automática no cartão. Pode trocar de plano ou cancelar a qualquer momento, sem multa.' },
+  { q: 'O sistema é seguro?', a: 'Sim. Pagamentos são processados pelo Mercado Pago (PCI Compliant) — nenhum dado do cartão chega ao nosso servidor. Usamos criptografia HTTPS, senhas com hash bcrypt, tokens JWT e rate-limiting.' },
 ];
 
 /* ──────────── componentes auxiliares ──────────── */
@@ -87,7 +87,7 @@ export default function Landing() {
           </div>
           <div className="hidden md:flex items-center gap-3">
             <Link to="/login" className="text-sm font-medium text-gray-600 hover:text-blue-600 transition">Entrar</Link>
-            <Link to="/register" className="text-sm font-medium bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition shadow-sm">Teste Grátis</Link>
+            <Link to="/checkout" className="text-sm font-medium bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition shadow-sm">Começar Grátis</Link>
           </div>
           <button onClick={() => setMenuOpen(!menuOpen)} className="md:hidden text-gray-600">
             {menuOpen ? <FiX className="w-6 h-6" /> : <FiMenu className="w-6 h-6" />}
@@ -101,7 +101,7 @@ export default function Landing() {
             <a href="#faq" onClick={() => setMenuOpen(false)} className="block text-gray-600 hover:text-blue-600">FAQ</a>
             <hr className="border-gray-200" />
             <Link to="/login" className="block text-gray-600">Entrar</Link>
-            <Link to="/register" className="block text-center bg-blue-600 text-white py-2.5 rounded-lg">Teste Grátis</Link>
+            <Link to="/checkout" className="block text-center bg-blue-600 text-white py-2.5 rounded-lg">Começar Grátis</Link>
           </div>
         )}
       </nav>
@@ -111,7 +111,7 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center gap-12">
           <div className="flex-1 text-center md:text-left">
             <div className="inline-flex items-center gap-2 bg-blue-100 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full mb-6">
-              <FiZap className="w-3 h-3" /> 14 dias grátis — sem cartão de crédito
+              <FiZap className="w-3 h-3" /> 30 dias grátis — experimente todas as funcionalidades
             </div>
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight text-gray-900">
               Controle de ponto <span className="text-blue-600">digital</span> para sua empresa
@@ -120,8 +120,8 @@ export default function Landing() {
               Funcionário bate ponto pelo celular com GPS. Relatório mensal automático para contabilidade. Funciona offline.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
-              <Link to="/register" className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white font-semibold px-8 py-4 rounded-xl hover:bg-blue-700 transition shadow-lg shadow-blue-200 text-lg">
-                Começar Grátis <FiArrowRight />
+              <Link to="/checkout" className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white font-semibold px-8 py-4 rounded-xl hover:bg-blue-700 transition shadow-lg shadow-blue-200 text-lg">
+                Experimente 30 dias grátis <FiArrowRight />
               </Link>
               <a href="#pricing" className="inline-flex items-center justify-center gap-2 border-2 border-gray-300 text-gray-700 font-semibold px-8 py-4 rounded-xl hover:border-blue-400 hover:text-blue-600 transition text-lg">
                 Ver Planos
@@ -212,7 +212,7 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Planos simples e transparentes</h2>
-            <p className="text-gray-500 mt-3">14 dias grátis em todos os planos. Sem cartão de crédito.</p>
+            <p className="text-gray-500 mt-3">30 dias grátis em todos os planos. Cancele quando quiser.</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
             {plans.map((p, i) => (
@@ -232,13 +232,29 @@ export default function Landing() {
                     </li>
                   ))}
                 </ul>
-                <Link to="/register" className={`mt-8 block text-center font-semibold py-3 rounded-xl transition ${p.highlight ? 'bg-white text-blue-600 hover:bg-blue-50' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+                <Link to={`/checkout/${p.slug}`} className={`mt-8 block text-center font-semibold py-3 rounded-xl transition ${p.highlight ? 'bg-white text-blue-600 hover:bg-blue-50' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
                   {p.cta}
                 </Link>
               </div>
             ))}
           </div>
-          <p className="text-center text-gray-400 text-sm mt-8">Ou pague <strong>R$ 5/funcionário/mês</strong> (mínimo R$ 25). <a href="#faq" className="text-blue-500 underline">Saiba mais</a></p>
+          <p className="text-center text-gray-400 text-sm mt-8">Todos os planos incluem 30 dias grátis. <a href="#faq" className="text-blue-500 underline">Saiba mais</a></p>
+
+          {/* Trust Badges */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-6 mt-10 pt-8 border-t border-gray-200">
+            <div className="flex items-center gap-2 text-gray-500 text-sm">
+              <FiLock className="w-5 h-5 text-green-600" />
+              <span>Pagamento seguro via Mercado Pago</span>
+            </div>
+            <div className="flex items-center gap-2 text-gray-500 text-sm">
+              <FiShield className="w-5 h-5 text-blue-600" />
+              <span>Cancele quando quiser</span>
+            </div>
+            <div className="flex items-center gap-2 text-gray-500 text-sm">
+              <FiLock className="w-5 h-5 text-purple-600" />
+              <span>Dados protegidos com criptografia</span>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -281,9 +297,9 @@ export default function Landing() {
       <section className="py-20 px-6 bg-blue-600 text-white text-center">
         <div className="max-w-3xl mx-auto">
           <h2 className="text-3xl md:text-4xl font-bold mb-4">Pronto para modernizar o ponto da sua empresa?</h2>
-          <p className="text-blue-200 mb-8 text-lg">Comece agora com 14 dias grátis. Sem cartão de crédito.</p>
-          <Link to="/register" className="inline-flex items-center gap-2 bg-white text-blue-600 font-bold px-10 py-4 rounded-xl hover:bg-blue-50 transition text-lg shadow-lg">
-            Criar Conta Grátis <FiArrowRight />
+          <p className="text-blue-200 mb-8 text-lg">Comece agora com 30 dias grátis. Cancele quando quiser.</p>
+          <Link to="/checkout" className="inline-flex items-center gap-2 bg-white text-blue-600 font-bold px-10 py-4 rounded-xl hover:bg-blue-50 transition text-lg shadow-lg">
+            Experimente 30 dias grátis <FiArrowRight />
           </Link>
         </div>
       </section>

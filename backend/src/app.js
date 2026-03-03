@@ -14,6 +14,10 @@ const adjustmentRoutes = require('./routes/adjustmentRoutes');
 const exportRoutes = require('./routes/exportRoutes');
 const adjustmentRequestRoutes = require('./routes/adjustmentRequestRoutes');
 const employeeSelfServiceRoutes = require('./routes/employeeSelfServiceRoutes');
+const subscriptionRoutes = require('./routes/subscriptionRoutes');
+const webhookRoutes = require('./routes/webhookRoutes');
+const superAdminRoutes = require('./routes/superAdminRoutes');
+const { subscriptionGuard } = require('./middlewares/subscriptionGuard');
 
 const app = express();
 
@@ -28,15 +32,21 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
+// Rotas públicas (sem subscription guard)
 app.use('/api/auth', authRoutes);
-app.use('/api/employees', employeeRoutes);
-app.use('/api/time-entries', timeEntryRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/geofences', geofenceRoutes);
-app.use('/api/adjustments', adjustmentRoutes);
-app.use('/api/export', exportRoutes);
-app.use('/api/adjustment-requests', adjustmentRequestRoutes);
-app.use('/api/employee', employeeSelfServiceRoutes);
+app.use('/api/webhooks', webhookRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/super-admin', superAdminRoutes);
+
+// Rotas protegidas por assinatura
+app.use('/api/employees', subscriptionGuard, employeeRoutes);
+app.use('/api/time-entries', subscriptionGuard, timeEntryRoutes);
+app.use('/api/reports', subscriptionGuard, reportRoutes);
+app.use('/api/geofences', subscriptionGuard, geofenceRoutes);
+app.use('/api/adjustments', subscriptionGuard, adjustmentRoutes);
+app.use('/api/export', subscriptionGuard, exportRoutes);
+app.use('/api/adjustment-requests', subscriptionGuard, adjustmentRequestRoutes);
+app.use('/api/employee', subscriptionGuard, employeeSelfServiceRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });

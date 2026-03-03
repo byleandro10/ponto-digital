@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import SubscriptionBanner from './SubscriptionBanner';
 import {
   FiUsers, FiClock, FiLogOut, FiFileText, FiEdit2,
-  FiMapPin, FiSettings, FiMap, FiGrid, FiMenu, FiX, FiInbox
+  FiMapPin, FiSettings, FiMap, FiGrid, FiMenu, FiX, FiInbox, FiCreditCard
 } from 'react-icons/fi';
 
 export const NAV_ITEMS = [
@@ -14,6 +15,7 @@ export const NAV_ITEMS = [
   { to: '/admin/adjustment-requests',  icon: FiInbox,    label: 'Solicitações',         color: 'text-orange-500' },
   { to: '/admin/punch-map',            icon: FiMap,      label: 'Mapa de Batidas',      color: 'text-purple-500' },
   { to: '/admin/geofences',            icon: FiMapPin,   label: 'Cercas Virtuais',      color: 'text-red-500' },
+  { to: '/admin/subscription',         icon: FiCreditCard, label: 'Assinatura',          color: 'text-emerald-500' },
   { to: '/admin/settings',             icon: FiSettings, label: 'Configurações',        color: 'text-gray-500' },
 ];
 
@@ -122,6 +124,7 @@ export default function AdminLayout({ title, children }) {
         </header>
 
         <main className="flex-1 overflow-auto">
+          <SubscriptionBanner />
           {children}
         </main>
       </div>

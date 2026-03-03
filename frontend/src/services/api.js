@@ -16,6 +16,13 @@ api.interceptors.response.use(
       localStorage.removeItem('user');
       window.location.href = '/login';
     }
+    if (error.response?.status === 402) {
+      // Assinatura expirada/inválida — redirecionar para renovação
+      const currentPath = window.location.pathname;
+      if (!currentPath.includes('/subscription') && !currentPath.includes('/checkout')) {
+        window.location.href = '/admin/subscription';
+      }
+    }
     return Promise.reject(error);
   }
 );
