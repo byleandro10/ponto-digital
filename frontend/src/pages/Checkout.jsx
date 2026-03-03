@@ -160,18 +160,22 @@ export default function Checkout() {
       // 1. Tokenizar cartão via Mercado Pago JS SDK
       let cardTokenId = null;
       if (window.MercadoPago) {
-        const mp = new window.MercadoPago(import.meta.env.VITE_MP_PUBLIC_KEY || 'TEST-0000-0000', { locale: 'pt-BR' });
-        const [expMonth, expYear] = cardExpiry.split('/');
-        const tokenResult = await mp.createCardToken({
-          cardNumber: cardNumber.replace(/\s/g, ''),
-          cardholderName: cardHolder,
-          cardExpirationMonth: expMonth,
-          cardExpirationYear: `20${expYear}`,
-          securityCode: cardCvv,
-          identificationType: 'CNPJ',
-          identificationNumber: cnpj.replace(/\D/g, ''),
-        });
-        cardTokenId = tokenResult.id;
+        try {
+          const mp = new window.MercadoPago(import.meta.env.VITE_MP_PUBLIC_KEY || 'TEST-0000-0000', { locale: 'pt-BR' });
+          const [expMonth, expYear] = cardExpiry.split('/');
+          const tokenResult = await mp.createCardToken({
+            cardNumber: cardNumber.replace(/\s/g, ''),
+            cardholderName: cardHolder,
+            cardExpirationMonth: expMonth,
+            cardExpirationYear: `20${expYear}`,
+            securityCode: cardCvv,
+            identificationType: 'CNPJ',
+            identificationNumber: cnpj.replace(/\D/g, ''),
+          });
+          cardTokenId = tokenResult.id;
+        } catch (mpErr) {
+          console.warn('Tokenização MP falhou (credenciais de teste?):', mpErr.message);
+        }
       }
 
       // 2. Registrar empresa + admin
