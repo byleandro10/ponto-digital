@@ -58,8 +58,18 @@ export function AuthProvider({ children }) {
     });
   }
 
+  /** Atualiza o status da assinatura no contexto/localStorage */
+  function updateSubscriptionStatus(subscriptionStatus, trialEndsAt) {
+    setUser(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, subscriptionStatus, trialEndsAt: trialEndsAt || null };
+      localStorage.setItem('user', JSON.stringify(updated));
+      return updated;
+    });
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, signed: !!user, loginAdmin, loginEmployee, register, logout, updateCompanyLogo }}>
+    <AuthContext.Provider value={{ user, loading, signed: !!user, loginAdmin, loginEmployee, register, logout, updateCompanyLogo, updateSubscriptionStatus }}>
       {children}
     </AuthContext.Provider>
   );

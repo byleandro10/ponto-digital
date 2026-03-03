@@ -21,6 +21,17 @@ export const NAV_ITEMS = [
 
 function Sidebar({ open, onClose, user, logout }) {
   const { pathname } = useLocation();
+
+  // Determinar se a assinatura está inativa
+  const status = user?.subscriptionStatus;
+  const trialExpired = status === 'TRIAL' && user?.trialEndsAt && new Date(user.trialEndsAt) < new Date();
+  const subscriptionInactive = ['CANCELLED', 'EXPIRED', 'PAST_DUE'].includes(status) || trialExpired;
+
+  // Se inativa, mostrar apenas Assinatura
+  const visibleNavItems = subscriptionInactive
+    ? NAV_ITEMS.filter(item => item.to === '/admin/subscription')
+    : NAV_ITEMS;
+
   return (
     <>
       {open && (
@@ -58,7 +69,13 @@ function Sidebar({ open, onClose, user, logout }) {
 
         {/* Navegação */}
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
-          {NAV_ITEMS.map(item => {
+          {subscriptionInactive && (
+            <div className="mx-1 mb-4 p-3 bg-red-50 border border-red-200 rounded-xl">
+              <p className="text-xs text-red-700 font-semibold">Acesso limitado</p>
+              <p className="text-xs text-red-600 mt-0.5">Ative sua assinatura para liberar o sistema.</p>
+            </div>
+          )}
+          {visibleNavItems.map(item => {
             const active = pathname === item.to;
             return (
               <Link

@@ -34,18 +34,39 @@ const LoadingSpinner = () => (
   </div>
 );
 
-function PrivateRoute({ children, type }) {
+function PrivateRoute({ children, type, allowExpired }) {
   const { signed, user, loading } = useAuth();
   if (loading) return <LoadingSpinner />;
   if (!signed) return <Navigate to="/login" />;
   if (type === 'super_admin' && user?.role !== 'SUPER_ADMIN') return <Navigate to="/admin/dashboard" />;
   if (type && type !== 'super_admin' && user?.type !== type) return <Navigate to={user?.role === 'SUPER_ADMIN' ? '/super-admin/dashboard' : user?.type === 'admin' ? '/admin/dashboard' : '/employee/punch'} />;
+
+  // Admin com assinatura inativa só pode acessar /admin/subscription
+  if (type === 'admin' && !allowExpired && user?.role !== 'SUPER_ADMIN') {
+    const status = user?.subscriptionStatus;
+    const trialExpired = status === 'TRIAL' && user?.trialEndsAt && new Date(user.trialEndsAt) < new Date();
+    if (['CANCELLED', 'EXPIRED', 'PAST_DUE'].includes(status) || trialExpired) {
+      return <Navigate to="/admin/subscription" />;
+    }
+  }
+
   return children;
 }
 
 function AppRoutes() {
   const { signed, user } = useAuth();
-  const defaultRedirect = user?.role === 'SUPER_ADMIN' ? '/super-admin/dashboard' : user?.type === 'admin' ? '/admin/dashboard' : '/employee/punch';
+
+  // Admin com assinatura inativa vai direto para /admin/subscription
+  const subscriptionInactive = user?.type === 'admin' && user?.role !== 'SUPER_ADMIN' && (
+    ['CANCELLED', 'EXPIRED', 'PAST_DUE'].includes(user?.subscriptionStatus) ||
+    (user?.subscriptionStatus === 'TRIAL' && user?.trialEndsAt && new Date(user.trialEndsAt) < new Date())
+  );
+  const defaultRedirect = user?.role === 'SUPER_ADMIN'
+    ? '/super-admin/dashboard'
+    : user?.type === 'admin'
+      ? (subscriptionInactive ? '/admin/subscription' : '/admin/dashboard')
+      : '/employee/punch';
+
   return (
     <Suspense fallback={<LoadingSpinner />}>
       <Routes>
@@ -67,7 +88,7 @@ function AppRoutes() {
         <Route path="/admin/geofences" element={<PrivateRoute type="admin"><Geofences /></PrivateRoute>} />
         <Route path="/admin/settings" element={<PrivateRoute type="admin"><Settings /></PrivateRoute>} />
         <Route path="/admin/punch-map" element={<PrivateRoute type="admin"><PunchMapPage /></PrivateRoute>} />
-        <Route path="/admin/subscription" element={<PrivateRoute type="admin"><AdminSubscription /></PrivateRoute>} />
+        <Route path="/admin/subscription" element={<PrivateRoute type="admin" allowExpired><AdminSubscription /></PrivateRoute>} />
         <Route path="/super-admin/dashboard" element={<PrivateRoute type="super_admin"><SADashboard /></PrivateRoute>} />
         <Route path="/super-admin/companies" element={<PrivateRoute type="super_admin"><SACompanies /></PrivateRoute>} />
         <Route path="/super-admin/revenue" element={<PrivateRoute type="super_admin"><SARevenue /></PrivateRoute>} />

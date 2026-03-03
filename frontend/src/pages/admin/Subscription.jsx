@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../../components/AdminLayout';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
@@ -14,7 +15,8 @@ const PLANS = [
 ];
 
 export default function Subscription() {
-  const { user } = useAuth();
+  const { user, updateSubscriptionStatus } = useAuth();
+  const navigate = useNavigate();
   const [subscription, setSubscription] = useState(null);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -138,12 +140,11 @@ export default function Subscription() {
       setShowCardForm(false);
       setCardNumber(''); setCardHolder(''); setCardExpiry(''); setCardCvv('');
 
-      // Atualizar dados no localStorage
-      const savedUser = JSON.parse(localStorage.getItem('user') || '{}');
-      savedUser.subscriptionStatus = 'ACTIVE';
-      localStorage.setItem('user', JSON.stringify(savedUser));
+      // Atualizar status no contexto e localStorage
+      updateSubscriptionStatus('ACTIVE', null);
 
-      await fetchData();
+      // Redirecionar para o dashboard com acesso liberado
+      navigate('/admin/dashboard');
     } catch (error) {
       toast.error(error.response?.data?.error || 'Erro ao processar pagamento. Verifique os dados do cartão.');
     } finally {
