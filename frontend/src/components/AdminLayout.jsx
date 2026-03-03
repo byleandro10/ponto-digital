@@ -14,7 +14,7 @@ export const NAV_ITEMS = [
   { to: '/admin/adjustments',          icon: FiEdit2,    label: 'Ajuste de Ponto',      color: 'text-yellow-500' },
   { to: '/admin/adjustment-requests',  icon: FiInbox,    label: 'Solicitações',         color: 'text-orange-500' },
   { to: '/admin/punch-map',            icon: FiMap,      label: 'Mapa de Batidas',      color: 'text-purple-500' },
-  { to: '/admin/geofences',            icon: FiMapPin,   label: 'Cercas Virtuais',      color: 'text-red-500' },
+  { to: '/admin/geofences',            icon: FiMapPin,   label: 'Cercas Virtuais',      color: 'text-red-500',    minPlan: 'professional' },
   { to: '/admin/subscription',         icon: FiCreditCard, label: 'Assinatura',          color: 'text-emerald-500' },
   { to: '/admin/settings',             icon: FiSettings, label: 'Configurações',        color: 'text-gray-500' },
 ];
@@ -27,10 +27,17 @@ function Sidebar({ open, onClose, user, logout }) {
   const trialExpired = status === 'TRIAL' && user?.trialEndsAt && new Date(user.trialEndsAt) < new Date();
   const subscriptionInactive = ['CANCELLED', 'EXPIRED', 'PAST_DUE'].includes(status) || trialExpired;
 
-  // Se inativa, mostrar apenas Assinatura
+  // Filtrar itens por status de assinatura e plano
+  const companyPlan = user?.company?.plan || 'basic';
+  const planOrder = { basic: 0, professional: 1, enterprise: 2 };
+  const userPlanLevel = planOrder[companyPlan] ?? 0;
+
   const visibleNavItems = subscriptionInactive
     ? NAV_ITEMS.filter(item => item.to === '/admin/subscription')
-    : NAV_ITEMS;
+    : NAV_ITEMS.filter(item => {
+        if (!item.minPlan) return true;
+        return userPlanLevel >= (planOrder[item.minPlan] ?? 0);
+      });
 
   return (
     <>

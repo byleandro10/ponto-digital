@@ -124,7 +124,7 @@ async function loginAdmin(req, res) {
     res.json({
       token,
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
-      company: { id: user.company.id, name: user.company.name },
+      company: { id: user.company.id, name: user.company.name, plan: user.company.plan },
       subscriptionStatus: user.company.subscriptionStatus || 'TRIAL',
       trialEndsAt: user.company.trialEndsAt || null,
     });

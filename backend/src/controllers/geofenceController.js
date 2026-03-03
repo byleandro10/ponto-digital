@@ -94,6 +94,31 @@ async function deleteGeofence(req, res) {
 async function updateGeofenceConfig(req, res) {
   try {
     const { geofenceMode, requireSelfie } = req.body;
+
+    // Verificar plano da empresa
+    const currentCompany = await prisma.company.findUnique({
+      where: { id: req.companyId },
+      select: { plan: true },
+    });
+    const plan = currentCompany?.plan || 'basic';
+    const isBasic = plan === 'basic';
+
+    // Plano básico não pode ativar selfie nem geofencing
+    if (isBasic && requireSelfie === true) {
+      return res.status(403).json({
+        error: 'Foto no ponto (selfie) disponível a partir do plano Profissional. Faça upgrade para ativar.',
+        code: 'FEATURE_NOT_AVAILABLE',
+        currentPlan: plan,
+      });
+    }
+    if (isBasic && geofenceMode && geofenceMode !== 'off') {
+      return res.status(403).json({
+        error: 'Cerca virtual disponível a partir do plano Profissional. Faça upgrade para ativar.',
+        code: 'FEATURE_NOT_AVAILABLE',
+        currentPlan: plan,
+      });
+    }
+
     const data = {};
     if (geofenceMode !== undefined) {
       if (!['off', 'warn', 'block'].includes(geofenceMode)) {
@@ -120,7 +145,7 @@ async function getCompanyConfig(req, res) {
   try {
     const company = await prisma.company.findUnique({
       where: { id: req.companyId },
-      select: { geofenceMode: true, requireSelfie: true, name: true, cnpj: true, address: true, logoUrl: true }
+      select: { geofenceMode: true, requireSelfie: true, name: true, cnpj: true, address: true, logoUrl: true, plan: true }
     });
     res.json({ config: company });
   } catch (error) {
