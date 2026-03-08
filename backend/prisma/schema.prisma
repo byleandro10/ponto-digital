@@ -176,11 +176,13 @@ model Subscription {
   id                 String    @id @default(uuid())
   companyId          String
   plan               String    // BASIC | PROFESSIONAL | ENTERPRISE
-  status             String    @default("TRIAL") // TRIAL | ACTIVE | PAST_DUE | CANCELLED | EXPIRED
+  status             String    @default("TRIAL") // TRIAL | ACTIVE | PAST_DUE | CANCELLED | PAUSED
+  trialStart         DateTime?
   trialEndsAt        DateTime?
   currentPeriodStart DateTime?
   currentPeriodEnd   DateTime?
-  mpPreapprovalId    String?   // ID da assinatura no Mercado Pago
+  gracePeriodEnd     DateTime? // Fim da carência após falha de pagamento
+  mpPreapprovalId    String?   @unique // ID da assinatura no Mercado Pago
   mpCustomerId       String?
   cancelledAt        DateTime?
   createdAt          DateTime  @default(now())
@@ -190,16 +192,18 @@ model Subscription {
   payments Payment[]
 
   @@index([companyId])
+  @@index([mpPreapprovalId])
 }
 
 model Payment {
   id              String    @id @default(uuid())
   subscriptionId  String
   companyId       String
-  mpPaymentId     String?   // ID do pagamento no Mercado Pago
+  mpPaymentId     String?   @unique // ID do pagamento no Mercado Pago
   amount          Decimal
   status          String    @default("PENDING") // PENDING | APPROVED | REJECTED | REFUNDED
   paidAt          DateTime?
+  failureReason   String?   // Motivo da falha de pagamento
   createdAt       DateTime  @default(now())
 
   subscription Subscription @relation(fields: [subscriptionId], references: [id])
@@ -207,6 +211,7 @@ model Payment {
 
   @@index([companyId])
   @@index([subscriptionId])
+  @@index([mpPaymentId])
 }
 
 model UsageLog {

@@ -4,8 +4,13 @@ const jwt = require('jsonwebtoken');
 /**
  * Middleware que autentica o usuário (decodifica JWT) E verifica assinatura.
  * Combina authMiddleware + verificação de subscription em um único middleware.
- * Permite acesso se: TRIAL (dentro do prazo), ACTIVE, ou PAST_DUE (carência 3 dias).
- * Bloqueia com HTTP 401 se token inválido, 402 se assinatura inativa.
+ *
+ * Regras de acesso:
+ *   TRIAL   → acesso total (se dentro do prazo)
+ *   ACTIVE  → acesso total
+ *   PAST_DUE → acesso liberado até gracePeriodEnd (3 dias)
+ *   PAUSED  → acesso bloqueado
+ *   CANCELLED → acesso bloqueado
  *
  * SUPER_ADMIN é isento do guard de assinatura.
  */
@@ -59,7 +64,7 @@ async function subscriptionGuard(req, res, next) {
       return next();
     }
 
-    // TRIAL — verificar se ainda dentro do prazo
+    // TRIAL — verificar se ainda dentro do prazo (14 dias)
     if (status === 'TRIAL') {
       if (company.trialEndsAt && company.trialEndsAt > now) {
         return next();
@@ -71,7 +76,7 @@ async function subscriptionGuard(req, res, next) {
       });
     }
 
-    // PAST_DUE — carência de 3 dias
+    // PAST_DUE — carência de 3 dias usando gracePeriodEnd
     if (status === 'PAST_DUE') {
       const subscription = await prisma.subscription.findFirst({
         where: { companyId, status: 'PAST_DUE' },
@@ -79,15 +84,30 @@ async function subscriptionGuard(req, res, next) {
       });
 
       if (subscription) {
-        const gracePeriodEnd = new Date(subscription.updatedAt);
-        gracePeriodEnd.setDate(gracePeriodEnd.getDate() + 3);
-        if (now < gracePeriodEnd) {
+        // Usar campo gracePeriodEnd se disponível, senão fallback para updatedAt + 3 dias
+        let graceEnd;
+        if (subscription.gracePeriodEnd) {
+          graceEnd = new Date(subscription.gracePeriodEnd);
+        } else {
+          graceEnd = new Date(subscription.updatedAt);
+          graceEnd.setDate(graceEnd.getDate() + 3);
+        }
+
+        if (now < graceEnd) {
           return next();
         }
       }
       return res.status(402).json({
         error: 'Pagamento pendente. Regularize para manter o acesso.',
         code: 'PAYMENT_OVERDUE',
+      });
+    }
+
+    // PAUSED — acesso bloqueado
+    if (status === 'PAUSED') {
+      return res.status(402).json({
+        error: 'Assinatura pausada. Reative para continuar usando o sistema.',
+        code: 'SUBSCRIPTION_PAUSED',
       });
     }
 
