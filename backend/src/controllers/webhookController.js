@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const billingService = require('../services/billingService');
 
 // Set para idempotência em memória (evita reprocessamento de webhooks duplicados)
-// Em produção, considere usar Redis ou tabela de idempotência no banco.
+// TODO: Em produção, migrar para Redis ou tabela de idempotência no banco.
 const processedWebhooks = new Set();
 const MAX_PROCESSED_CACHE = 10000;
 
@@ -18,28 +18,37 @@ const MAX_PROCESSED_CACHE = 10000;
  */
 async function handleMercadoPagoWebhook(req, res) {
   try {
-    // Responder rapidamente ao MP para evitar retry
-    res.status(200).json({ received: true });
-
     const { type, data, action } = req.body;
 
-    // ── Validar assinatura HMAC ──────────────────────────────────
+    // ── Validar assinatura HMAC (obrigatório) ────────────────────
+    const secret = process.env.MP_WEBHOOK_SECRET;
+    if (!secret) {
+      console.error('[Webhook] MP_WEBHOOK_SECRET não configurado — rejeitando evento');
+      return res.status(500).json({ error: 'Webhook secret not configured' });
+    }
+
     const signature = req.headers['x-signature'];
     const requestId = req.headers['x-request-id'];
 
-    if (process.env.MP_WEBHOOK_SECRET && signature && requestId) {
-      const isValid = verifyWebhookSignature({
-        signature,
-        requestId,
-        dataId: data?.id,
-        secret: process.env.MP_WEBHOOK_SECRET,
-      });
-
-      if (!isValid) {
-        console.warn('[Webhook] Assinatura HMAC inválida — ignorando evento');
-        return;
-      }
+    if (!signature || !requestId) {
+      console.warn('[Webhook] Headers x-signature/x-request-id ausentes — rejeitando evento');
+      return res.status(401).json({ error: 'Missing signature headers' });
     }
+
+    const isValid = verifyWebhookSignature({
+      signature,
+      requestId,
+      dataId: data?.id,
+      secret,
+    });
+
+    if (!isValid) {
+      console.warn('[Webhook] Assinatura HMAC inválida — rejeitando evento');
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+
+    // Responder ao MP somente após validação HMAC
+    res.status(200).json({ received: true });
 
     // ── Idempotência ─────────────────────────────────────────────
     const idempotencyKey = `${type || action}:${data?.id}`;

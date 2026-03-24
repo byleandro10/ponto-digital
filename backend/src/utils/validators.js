@@ -64,7 +64,11 @@ function formatCNPJ(cnpj) {
 
 function isValidPassword(password) {
   if (!password || typeof password !== 'string') return false;
-  if (password.length < 6) return false;
+  if (password.length < 8) return false;
+  // Requer pelo menos: 1 maiúscula, 1 minúscula, 1 número
+  if (!/[A-Z]/.test(password)) return false;
+  if (!/[a-z]/.test(password)) return false;
+  if (!/[0-9]/.test(password)) return false;
   return true;
 }
 
@@ -74,13 +78,17 @@ function getPasswordErrors(password) {
     errors.push('Senha é obrigatória.');
     return errors;
   }
-  if (password.length < 6) errors.push('Senha deve ter no mínimo 6 caracteres.');
+  if (password.length < 8) errors.push('Senha deve ter no mínimo 8 caracteres.');
+  if (!/[A-Z]/.test(password)) errors.push('Senha deve conter pelo menos uma letra maiúscula.');
+  if (!/[a-z]/.test(password)) errors.push('Senha deve conter pelo menos uma letra minúscula.');
+  if (!/[0-9]/.test(password)) errors.push('Senha deve conter pelo menos um número.');
   return errors;
 }
 
 function sanitize(str) {
   if (!str || typeof str !== 'string') return str;
-  return str.trim();
+  // Remove tags HTML para prevenir XSS stored
+  return str.replace(/<[^>]*>/g, '').trim();
 }
 
 function isValidPhone(phone) {

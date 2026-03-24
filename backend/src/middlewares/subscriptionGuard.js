@@ -118,7 +118,7 @@ async function subscriptionGuard(req, res, next) {
     });
   } catch (error) {
     console.error('Erro no subscriptionGuard:', error);
-    return next(); // Em caso de erro, permitir acesso (fail-open)
+    return res.status(500).json({ error: 'Erro interno ao verificar assinatura. Tente novamente.' });
   }
 }
 

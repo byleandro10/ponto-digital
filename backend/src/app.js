@@ -22,10 +22,40 @@ const { subscriptionGuard } = require('./middlewares/subscriptionGuard');
 
 const app = express();
 
-app.use(helmet());
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+// Validar JWT_SECRET no startup
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+  console.error('FATAL: JWT_SECRET não configurado ou muito curto (mínimo 32 caracteres)');
+  process.exit(1);
+}
 
+app.use(helmet());
+
+// Request logging básico para auditoria
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
+  });
+  next();
+});
+
+// CORS restrito a origens permitidas
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
+app.use(cors({
+  origin: function (origin, callback) {
+    // Permitir requests sem origin (mobile apps, Postman, server-to-server)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error('Origem não permitida pelo CORS'));
+  },
+  credentials: true
+}));
+app.use(express.json({ limit: '2mb' }));
+
+// Rate limiter global
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
@@ -33,8 +63,15 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
+// Rate limiter estrito para rotas de autenticação (brute-force protection)
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: { error: 'Muitas tentativas de login. Aguarde 1 minuto.' }
+});
+
 // Rotas públicas (sem subscription guard)
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/billing', billingRoutes);

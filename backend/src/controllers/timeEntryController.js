@@ -10,6 +10,19 @@ async function clockPunch(req, res) {
     const { latitude, longitude, address, deviceInfo, photo, notes } = req.body;
     const employeeId = req.employeeId;
 
+    // Validar tamanho da foto (máximo 500KB em base64)
+    if (photo && typeof photo === 'string' && photo.length > 682666) {
+      return res.status(400).json({ error: 'Foto muito grande. Máximo permitido: 500KB.' });
+    }
+
+    // Validar coordenadas GPS (ranges válidos)
+    if (latitude !== undefined && (typeof latitude !== 'number' || latitude < -90 || latitude > 90)) {
+      return res.status(400).json({ error: 'Latitude inválida.' });
+    }
+    if (longitude !== undefined && (typeof longitude !== 'number' || longitude < -180 || longitude > 180)) {
+      return res.status(400).json({ error: 'Longitude inválida.' });
+    }
+
     // Buscar empresa e configuração
     const employee = await prisma.employee.findUnique({
       where: { id: employeeId },
@@ -152,6 +165,17 @@ async function getHistory(req, res) {
   try {
     const { startDate, endDate } = req.query;
     const employeeId = req.employeeId || req.params.employeeId;
+
+    // Se acesso via rota admin (params.employeeId), validar que o funcionário pertence à mesma empresa
+    if (req.params.employeeId && req.companyId) {
+      const employee = await prisma.employee.findFirst({
+        where: { id: req.params.employeeId, companyId: req.companyId }
+      });
+      if (!employee) {
+        return res.status(404).json({ error: 'Funcionário não encontrado.' });
+      }
+    }
+
     const where = { employeeId };
     if (startDate && endDate) {
       // Interpreta as datas no fuso de Brasília

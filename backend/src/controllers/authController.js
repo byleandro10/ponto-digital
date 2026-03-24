@@ -48,7 +48,7 @@ async function register(req, res) {
 
     // Validação de senha
     if (!isValidPassword(password)) {
-      return res.status(400).json({ error: 'Senha deve ter no mínimo 6 caracteres.' });
+      return res.status(400).json({ error: 'Senha deve ter no mínimo 8 caracteres, com pelo menos 1 maiúscula, 1 minúscula e 1 número.' });
     }
 
     // Validação de nome
@@ -58,18 +58,19 @@ async function register(req, res) {
 
     const existingCompany = await prisma.company.findUnique({ where: { cnpj } });
     if (existingCompany) {
-      return res.status(400).json({ error: 'CNPJ já cadastrado.' });
+      return res.status(400).json({ error: 'Não foi possível completar o cadastro. Verifique os dados e tente novamente.' });
     }
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      return res.status(400).json({ error: 'E-mail já cadastrado.' });
+      return res.status(400).json({ error: 'Não foi possível completar o cadastro. Verifique os dados e tente novamente.' });
     }
     const hashedPassword = await bcrypt.hash(password, 12);
     // Calcular trial de 30 dias
     const trialEndsAt = new Date();
     trialEndsAt.setDate(trialEndsAt.getDate() + 30);
 
-    const plan = sanitize(req.body.plan) || 'basic';
+    // Plano sempre inicia como basic — upgrade via billing
+    const plan = 'basic';
 
     const company = await prisma.company.create({
       data: {
@@ -150,7 +151,7 @@ async function loginEmployee(req, res) {
     _trackLoginDirect(employee.companyId, 'employee').catch(() => {});
     res.json({
       token,
-      employee: { id: employee.id, name: employee.name, cpf: employee.cpf, position: employee.position },
+      employee: { id: employee.id, name: employee.name, cpf: employee.cpf.replace(/^(\d{3})\d{6}(\d{2})$/, '$1.***.***-$2'), position: employee.position },
       company: { id: employee.company.id, name: employee.company.name }
     });
   } catch (error) {
@@ -167,7 +168,7 @@ async function changePasswordAdmin(req, res) {
       return res.status(400).json({ error: 'Senha atual e nova senha são obrigatórias.' });
     }
     if (!isValidPassword(newPassword)) {
-      return res.status(400).json({ error: 'Nova senha deve ter no mínimo 6 caracteres.' });
+      return res.status(400).json({ error: 'Nova senha deve ter no mínimo 8 caracteres, com pelo menos 1 maiúscula, 1 minúscula e 1 número.' });
     }
 
     const user = await prisma.user.findUnique({ where: { id: req.userId } });
@@ -194,7 +195,7 @@ async function changePasswordEmployee(req, res) {
       return res.status(400).json({ error: 'Senha atual e nova senha são obrigatórias.' });
     }
     if (!isValidPassword(newPassword)) {
-      return res.status(400).json({ error: 'Nova senha deve ter no mínimo 6 caracteres.' });
+      return res.status(400).json({ error: 'Nova senha deve ter no mínimo 8 caracteres, com pelo menos 1 maiúscula, 1 minúscula e 1 número.' });
     }
 
     const employee = await prisma.employee.findUnique({ where: { id: req.employeeId } });

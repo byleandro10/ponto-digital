@@ -4,8 +4,12 @@ const bcrypt = require('bcryptjs');
 const prisma = new PrismaClient();
 
 async function main() {
-  const email = process.env.SUPER_ADMIN_EMAIL || 'superadmin@pontodigital.com.br';
-  const password = process.env.SUPER_ADMIN_PASSWORD || 'SuperAdmin@123';
+  const email = process.env.SUPER_ADMIN_EMAIL;
+  const password = process.env.SUPER_ADMIN_PASSWORD;
+  if (!email || !password) {
+    console.error('Seed: SUPER_ADMIN_EMAIL e SUPER_ADMIN_PASSWORD devem ser definidos como variáveis de ambiente.');
+    process.exit(1);
+  }
   const name = 'Super Admin';
 
   console.log('Seed: verificando SUPER_ADMIN...');
