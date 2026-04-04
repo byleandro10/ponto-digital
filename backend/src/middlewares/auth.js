@@ -1,40 +1,64 @@
 const jwt = require('jsonwebtoken');
+const { logSecurityEvent } = require('../utils/securityLogger');
+
+function extractBearerToken(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+
+  return authHeader.split(' ')[1];
+}
+
+function decodeToken(token) {
+  return jwt.verify(token, process.env.JWT_SECRET);
+}
+
+function assignAuthContext(req, decoded) {
+  req.userId = decoded.id;
+  req.userRole = decoded.role;
+  req.companyId = decoded.companyId;
+  req.userType = decoded.type;
+}
 
 async function authMiddleware(req, res, next) {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Token não fornecido.' });
+    const token = extractBearerToken(req);
+    if (!token) {
+      logSecurityEvent(req, 'missing_bearer_token');
+      return res.status(401).json({ error: 'Token nao fornecido.' });
     }
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.userId = decoded.id;
-    req.userRole = decoded.role;
-    req.companyId = decoded.companyId;
-    req.userType = decoded.type;
+
+    const decoded = decodeToken(token);
+    assignAuthContext(req, decoded);
     next();
   } catch (error) {
-    return res.status(401).json({ error: 'Token inválido ou expirado.' });
+    logSecurityEvent(req, 'invalid_token', { reason: error.message });
+    return res.status(401).json({ error: 'Token invalido ou expirado.' });
   }
 }
 
 async function employeeAuth(req, res, next) {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Token não fornecido.' });
+    const token = extractBearerToken(req);
+    if (!token) {
+      logSecurityEvent(req, 'missing_bearer_token');
+      return res.status(401).json({ error: 'Token nao fornecido.' });
     }
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const decoded = decodeToken(token);
     if (decoded.type !== 'employee') {
-      return res.status(403).json({ error: 'Acesso restrito a funcionários.' });
+      logSecurityEvent(req, 'employee_route_denied', { tokenType: decoded.type || null });
+      return res.status(403).json({ error: 'Acesso restrito a funcionarios.' });
     }
+
+    assignAuthContext(req, decoded);
     req.employeeId = decoded.id;
-    req.companyId = decoded.companyId;
     next();
   } catch (error) {
-    return res.status(401).json({ error: 'Token inválido ou expirado.' });
+    logSecurityEvent(req, 'invalid_token', { reason: error.message });
+    return res.status(401).json({ error: 'Token invalido ou expirado.' });
   }
 }
 
-module.exports = { authMiddleware, employeeAuth };
+module.exports = { authMiddleware, employeeAuth, extractBearerToken, decodeToken, assignAuthContext };

@@ -1,4 +1,5 @@
 const prisma = require('../config/database');
+const { logSecurityEvent } = require('../utils/securityLogger');
 
 const PLAN_LIMITS = {
   basic: { maxEmployees: 15, geofence: false },
@@ -6,14 +7,9 @@ const PLAN_LIMITS = {
   enterprise: { maxEmployees: Infinity, geofence: true },
 };
 
-/**
- * Verifica se a empresa atingiu o limite de funcionários do plano.
- * Aplicar nas rotas de criação de funcionário (POST /api/employees).
- */
 function employeeLimitGuard() {
   return async (req, res, next) => {
     try {
-      // SUPER_ADMIN é isento
       if (req.userRole === 'SUPER_ADMIN') return next();
 
       const companyId = req.companyId;
@@ -22,7 +18,7 @@ function employeeLimitGuard() {
         select: { plan: true },
       });
 
-      if (!company) return res.status(404).json({ error: 'Empresa não encontrada.' });
+      if (!company) return res.status(404).json({ error: 'Empresa nao encontrada.' });
 
       const limits = PLAN_LIMITS[company.plan] || PLAN_LIMITS.basic;
 
@@ -31,8 +27,13 @@ function employeeLimitGuard() {
       });
 
       if (employeeCount >= limits.maxEmployees) {
+        logSecurityEvent(req, 'plan_employee_limit_reached', {
+          currentPlan: company.plan,
+          limit: limits.maxEmployees,
+          current: employeeCount,
+        });
         return res.status(403).json({
-          error: `Limite de ${limits.maxEmployees} funcionários atingido para o plano ${company.plan}. Faça upgrade para adicionar mais.`,
+          error: `Limite de ${limits.maxEmployees} funcionarios atingido para o plano ${company.plan}. Faca upgrade para adicionar mais.`,
           code: 'PLAN_LIMIT_REACHED',
           currentPlan: company.plan,
           limit: limits.maxEmployees,
@@ -43,15 +44,11 @@ function employeeLimitGuard() {
       next();
     } catch (error) {
       console.error('Erro no employeeLimitGuard:', error);
-      next();
+      return res.status(500).json({ error: 'Erro interno ao validar limite do plano.' });
     }
   };
 }
 
-/**
- * Verifica se a empresa tem acesso a funcionalidade de geofence.
- * Plano Básico não tem acesso.
- */
 function geofenceAccessGuard() {
   return async (req, res, next) => {
     try {
@@ -63,13 +60,13 @@ function geofenceAccessGuard() {
         select: { plan: true },
       });
 
-      if (!company) return res.status(404).json({ error: 'Empresa não encontrada.' });
+      if (!company) return res.status(404).json({ error: 'Empresa nao encontrada.' });
 
       const limits = PLAN_LIMITS[company.plan] || PLAN_LIMITS.basic;
-
       if (!limits.geofence) {
+        logSecurityEvent(req, 'plan_feature_denied', { feature: 'geofence', currentPlan: company.plan });
         return res.status(403).json({
-          error: 'Funcionalidade de cerca virtual disponível a partir do plano Profissional.',
+          error: 'Funcionalidade de cerca virtual disponivel a partir do plano Profissional.',
           code: 'FEATURE_NOT_AVAILABLE',
           currentPlan: company.plan,
         });
@@ -78,7 +75,7 @@ function geofenceAccessGuard() {
       next();
     } catch (error) {
       console.error('Erro no geofenceAccessGuard:', error);
-      next();
+      return res.status(500).json({ error: 'Erro interno ao validar permissao de plano.' });
     }
   };
 }

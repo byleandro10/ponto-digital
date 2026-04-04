@@ -1,50 +1,36 @@
 const prisma = require('../config/database');
-const jwt = require('jsonwebtoken');
+const { extractBearerToken, decodeToken, assignAuthContext } = require('./auth');
+const { logSecurityEvent } = require('../utils/securityLogger');
 
-/**
- * Middleware que autentica o usuário (decodifica JWT) E verifica assinatura.
- * Combina authMiddleware + verificação de subscription em um único middleware.
- *
- * Regras de acesso:
- *   TRIAL   → acesso total (se dentro do prazo)
- *   ACTIVE  → acesso total
- *   PAST_DUE → acesso liberado até gracePeriodEnd (3 dias)
- *   PAUSED  → acesso bloqueado
- *   CANCELLED → acesso bloqueado
- *
- * SUPER_ADMIN é isento do guard de assinatura.
- */
 async function subscriptionGuard(req, res, next) {
   try {
-    // 1. Autenticar — decodificar JWT e popular req.userId, req.userRole, req.companyId
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Token não fornecido.' });
+    const token = extractBearerToken(req);
+    if (!token) {
+      logSecurityEvent(req, 'missing_bearer_token');
+      return res.status(401).json({ error: 'Token nao fornecido.' });
     }
-    const token = authHeader.split(' ')[1];
+
     let decoded;
     try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch {
-      return res.status(401).json({ error: 'Token inválido ou expirado.' });
+      decoded = decodeToken(token);
+    } catch (error) {
+      logSecurityEvent(req, 'invalid_token', { reason: error.message });
+      return res.status(401).json({ error: 'Token invalido ou expirado.' });
     }
-    req.userId = decoded.id;
-    req.userRole = decoded.role;
-    req.companyId = decoded.companyId;
-    req.userType = decoded.type;
-    // Para rotas de funcionário
+
+    assignAuthContext(req, decoded);
     if (decoded.type === 'employee') {
       req.employeeId = decoded.id;
     }
 
-    // 2. SUPER_ADMIN sempre tem acesso
     if (req.userRole === 'SUPER_ADMIN') {
       return next();
     }
 
     const companyId = req.companyId;
     if (!companyId) {
-      return res.status(401).json({ error: 'Empresa não identificada.' });
+      logSecurityEvent(req, 'missing_company_context');
+      return res.status(401).json({ error: 'Empresa nao identificada.' });
     }
 
     const company = await prisma.company.findUnique({
@@ -53,30 +39,29 @@ async function subscriptionGuard(req, res, next) {
     });
 
     if (!company) {
-      return res.status(404).json({ error: 'Empresa não encontrada.' });
+      logSecurityEvent(req, 'company_not_found_for_token');
+      return res.status(404).json({ error: 'Empresa nao encontrada.' });
     }
 
     const now = new Date();
     const status = company.subscriptionStatus;
 
-    // ACTIVE — ok
     if (status === 'ACTIVE') {
       return next();
     }
 
-    // TRIAL — verificar se ainda dentro do prazo (14 dias)
     if (status === 'TRIAL') {
       if (company.trialEndsAt && company.trialEndsAt > now) {
         return next();
       }
-      // Trial expirado — bloquear
+
+      logSecurityEvent(req, 'subscription_denied', { reason: 'trial_expired' });
       return res.status(402).json({
-        error: 'Período de teste expirado. Ative sua assinatura para continuar.',
+        error: 'Periodo de teste expirado. Ative sua assinatura para continuar.',
         code: 'TRIAL_EXPIRED',
       });
     }
 
-    // PAST_DUE — carência de 3 dias usando gracePeriodEnd
     if (status === 'PAST_DUE') {
       const subscription = await prisma.subscription.findFirst({
         where: { companyId, status: 'PAST_DUE' },
@@ -84,7 +69,6 @@ async function subscriptionGuard(req, res, next) {
       });
 
       if (subscription) {
-        // Usar campo gracePeriodEnd se disponível, senão fallback para updatedAt + 3 dias
         let graceEnd;
         if (subscription.gracePeriodEnd) {
           graceEnd = new Date(subscription.gracePeriodEnd);
@@ -97,21 +81,23 @@ async function subscriptionGuard(req, res, next) {
           return next();
         }
       }
+
+      logSecurityEvent(req, 'subscription_denied', { reason: 'payment_overdue' });
       return res.status(402).json({
         error: 'Pagamento pendente. Regularize para manter o acesso.',
         code: 'PAYMENT_OVERDUE',
       });
     }
 
-    // PAUSED — acesso bloqueado
     if (status === 'PAUSED') {
+      logSecurityEvent(req, 'subscription_denied', { reason: 'subscription_paused' });
       return res.status(402).json({
         error: 'Assinatura pausada. Reative para continuar usando o sistema.',
         code: 'SUBSCRIPTION_PAUSED',
       });
     }
 
-    // CANCELLED, EXPIRED ou qualquer outro status
+    logSecurityEvent(req, 'subscription_denied', { reason: 'subscription_inactive', status });
     return res.status(402).json({
       error: 'Assinatura inativa. Reative para continuar usando o sistema.',
       code: 'SUBSCRIPTION_INACTIVE',

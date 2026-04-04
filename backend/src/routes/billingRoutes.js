@@ -1,32 +1,34 @@
-/**
- * Rotas de Billing — endpoints conforme especificação
- *
- * POST /api/billing/create-subscription
- * POST /api/billing/cancel-subscription
- * GET  /api/billing/subscription-status
- *
- * Esses endpoints são aliases para os existentes em /api/subscriptions,
- * usando os mesmos controllers e lógica.
- */
 const express = require('express');
+const rateLimit = require('express-rate-limit');
+
 const router = express.Router();
 const { authMiddleware } = require('../middlewares/auth');
+const { roleGuard } = require('../middlewares/roleGuard');
+const { allowBodyFields, allowQueryFields } = require('../middlewares/requestGuard');
+const { logSecurityEvent } = require('../utils/securityLogger');
 const {
   createPreapproval,
   getStatus,
   cancelSubscription,
 } = require('../controllers/subscriptionController');
 
-// Todas as rotas requerem autenticação
+const billingLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    logSecurityEvent(req, 'billing_rate_limit_exceeded');
+    res.status(429).json({ error: 'Muitas operacoes de cobranca. Tente novamente em alguns minutos.' });
+  },
+});
+
 router.use(authMiddleware);
+router.use(roleGuard('ADMIN', 'SUPER_ADMIN'));
+router.use(billingLimiter);
 
-// POST /api/billing/create-subscription
-router.post('/create-subscription', createPreapproval);
-
-// POST /api/billing/cancel-subscription
-router.post('/cancel-subscription', cancelSubscription);
-
-// GET /api/billing/subscription-status
-router.get('/subscription-status', getStatus);
+router.post('/create-subscription', allowBodyFields(['plan', 'cardTokenId', 'email']), createPreapproval);
+router.post('/cancel-subscription', allowBodyFields([]), cancelSubscription);
+router.get('/subscription-status', allowQueryFields([]), getStatus);
 
 module.exports = router;

@@ -2,19 +2,22 @@ const express = require('express');
 const router = express.Router();
 const { authMiddleware, employeeAuth } = require('../middlewares/auth');
 const { roleGuard } = require('../middlewares/roleGuard');
+const { allowBodyFields, allowQueryFields, validateUuidParams } = require('../middlewares/requestGuard');
 const {
-  createRequest, myRequests,
-  listPendingRequests, approveRequest, rejectRequest, countPending
+  createRequest,
+  myRequests,
+  listPendingRequests,
+  approveRequest,
+  rejectRequest,
+  countPending,
 } = require('../controllers/adjustmentRequestController');
 
-// ─── Rotas do funcionário ─────────────────────────────────────────
-router.post('/request', employeeAuth, createRequest);
-router.get('/my-requests', employeeAuth, myRequests);
+router.post('/request', employeeAuth, allowBodyFields(['entryId', 'requestType', 'requestedValue', 'reason']), createRequest);
+router.get('/my-requests', employeeAuth, allowQueryFields([]), myRequests);
 
-// ─── Rotas do admin ───────────────────────────────────────────────
-router.get('/pending', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), listPendingRequests);
-router.get('/pending/count', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), countPending);
-router.put('/:requestId/approve', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), approveRequest);
-router.put('/:requestId/reject', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), rejectRequest);
+router.get('/pending', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), allowQueryFields(['status']), listPendingRequests);
+router.get('/pending/count', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), allowQueryFields([]), countPending);
+router.put('/:requestId/approve', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), validateUuidParams(['requestId']), allowBodyFields(['reviewNote']), approveRequest);
+router.put('/:requestId/reject', authMiddleware, roleGuard('ADMIN', 'SUPER_ADMIN'), validateUuidParams(['requestId']), allowBodyFields(['reviewNote']), rejectRequest);
 
 module.exports = router;
