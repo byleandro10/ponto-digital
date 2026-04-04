@@ -35,7 +35,9 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
   process.exit(1);
 }
 
-app.use(helmet());
+app.use(helmet({
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+}));
 
 // Request logging básico para auditoria
 app.use((req, res, next) => {
