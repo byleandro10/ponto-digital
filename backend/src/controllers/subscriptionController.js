@@ -160,68 +160,6 @@ async function reactivateSubscription(req, res) {
   }
 }
 
-async function createCheckoutSession(req, res) {
-  try {
-    const { plan } = req.body;
-    const session = await billingService.createCheckoutSession({
-      companyId: req.companyId,
-      userId: req.userId,
-      plan,
-    });
-
-    res.status(201).json(session);
-  } catch (error) {
-    if (error instanceof BillingError) {
-      return res.status(error.statusCode).json({ error: error.message, details: error.details || undefined });
-    }
-    console.error('[Billing] Erro ao criar checkout session:', {
-      requestId: req.requestId,
-      message: error.message,
-    });
-    res.status(500).json({ error: 'Erro ao iniciar o checkout seguro da Stripe.' });
-  }
-}
-
-async function completeCheckoutSession(req, res) {
-  try {
-    const { sessionId } = req.body;
-    const subscription = await billingService.completeCheckoutSession({
-      companyId: req.companyId,
-      sessionId,
-    });
-
-    res.json({
-      message: 'Assinatura confirmada com sucesso.',
-      subscription,
-    });
-  } catch (error) {
-    if (error instanceof BillingError) {
-      return res.status(error.statusCode).json({ error: error.message, details: error.details || undefined });
-    }
-    console.error('[Billing] Erro ao concluir checkout session:', {
-      requestId: req.requestId,
-      message: error.message,
-    });
-    res.status(500).json({ error: 'Erro ao confirmar a assinatura na Stripe.' });
-  }
-}
-
-async function createPortalSession(req, res) {
-  try {
-    const session = await billingService.createPortalSession(req.companyId);
-    res.status(201).json(session);
-  } catch (error) {
-    if (error instanceof BillingError) {
-      return res.status(error.statusCode).json({ error: error.message, details: error.details || undefined });
-    }
-    console.error('[Billing] Erro ao abrir portal Stripe:', {
-      requestId: req.requestId,
-      message: error.message,
-    });
-    res.status(500).json({ error: 'Erro ao abrir o portal de cobrança da Stripe.' });
-  }
-}
-
 module.exports = {
   getPublicBillingConfig,
   createSetupIntent,
@@ -231,9 +169,6 @@ module.exports = {
   cancelSubscription,
   getPayments,
   reactivateSubscription,
-  createCheckoutSession,
-  completeCheckoutSession,
-  createPortalSession,
   PLAN_PRICES,
   PLAN_NAMES,
 };

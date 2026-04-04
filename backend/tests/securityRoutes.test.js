@@ -21,9 +21,6 @@ jest.mock('../src/controllers/subscriptionController', () => ({
   getPublicBillingConfig: (req, res) => res.status(200).json({ ok: true }),
   createSetupIntent: (req, res) => res.status(201).json({ ok: true }),
   createPreapproval: (req, res) => res.status(200).json({ ok: true }),
-  createCheckoutSession: (req, res) => res.status(201).json({ ok: true }),
-  completeCheckoutSession: (req, res) => res.status(200).json({ ok: true }),
-  createPortalSession: (req, res) => res.status(201).json({ ok: true }),
   getStatus: (req, res) => res.status(200).json({ ok: true }),
   changePlan: (req, res) => res.status(200).json({ ok: true }),
   cancelSubscription: (req, res) => res.status(200).json({ ok: true }),
@@ -95,8 +92,8 @@ describe('Security route protections', () => {
     const app = buildApp('/api/subscriptions', subscriptionRoutes);
 
     const response = await request(app)
-      .post('/api/subscriptions/checkout-session')
-      .send({ plan: 'professional' });
+      .post('/api/subscriptions/reactivate')
+      .send({ plan: 'professional', paymentMethodId: 'pm_123', setupIntentId: 'seti_123' });
 
     expect(response.status).toBe(401);
     expect(response.body.error).toMatch(/token/i);
@@ -106,8 +103,9 @@ describe('Security route protections', () => {
     const app = buildApp('/api/subscriptions', subscriptionRoutes);
 
     const response = await request(app)
-      .post('/api/subscriptions/portal-session')
-      .set('Authorization', `Bearer ${employeeToken}`);
+      .post('/api/subscriptions/reactivate')
+      .set('Authorization', `Bearer ${employeeToken}`)
+      .send({ plan: 'professional', paymentMethodId: 'pm_123', setupIntentId: 'seti_123' });
 
     expect(response.status).toBe(403);
     expect(response.body.error).toMatch(/permissao/i);
@@ -124,13 +122,13 @@ describe('Security route protections', () => {
     expect(response.body.error).toMatch(/campos nao permitidos/i);
   });
 
-  test('rejects unexpected hosted checkout fields', async () => {
+  test('rejects unexpected billing fields on reactivate endpoint', async () => {
     const app = buildApp('/api/subscriptions', subscriptionRoutes);
 
     const response = await request(app)
-      .post('/api/subscriptions/checkout-session')
+      .post('/api/subscriptions/reactivate')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ plan: 'professional', customerId: 'cus_forjado' });
+      .send({ plan: 'professional', paymentMethodId: 'pm_123', setupIntentId: 'seti_123', customerId: 'cus_forjado' });
 
     expect(response.status).toBe(400);
     expect(response.body.error).toMatch(/campos nao permitidos/i);
