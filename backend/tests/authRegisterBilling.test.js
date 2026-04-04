@@ -81,18 +81,10 @@ describe('authController register with billing', () => {
     await register(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Este CNPJ ja possui uma empresa cadastrada.' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'Este CNPJ já possui uma empresa cadastrada.' });
   });
 
-  test('creates pending hosted-checkout account when signup includes a plan without payment method', async () => {
-    mockPrisma.company.create.mockResolvedValue({
-      id: 'company-1',
-      name: 'Empresa',
-      cnpj: '34.192.212/0001-30',
-      plan: 'basic',
-      users: [{ id: 'user-1', name: 'Admin Teste', email: 'novo@empresa.com', role: 'ADMIN' }],
-    });
-
+  test('requires stripe payment method when signup includes a plan', async () => {
     const req = {
       body: {
         companyName: 'Empresa',
@@ -107,15 +99,13 @@ describe('authController register with billing', () => {
 
     await register(req, res);
 
-    expect(mockBillingService.createSubscription).not.toHaveBeenCalled();
-    expect(mockPrisma.company.create.mock.calls[0][0].data.subscriptionStatus).toBe('EXPIRED');
-    expect(mockPrisma.company.create.mock.calls[0][0].data.subscriptions.create.status).toBe('EXPIRED');
-    expect(res.status).toHaveBeenCalledWith(201);
-    expect(res.json.mock.calls[0][0].message).toMatch(/checkout seguro/i);
-    expect(res.json.mock.calls[0][0].subscriptionStatus).toBe('EXPIRED');
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Valide o cartão pela Stripe antes de concluir o cadastro.',
+    });
   });
 
-  test('creates company and billing in a single successful legacy signup', async () => {
+  test('creates company and billing in a single successful signup', async () => {
     mockPrisma.company.create.mockResolvedValue({
       id: 'company-1',
       name: 'Empresa',

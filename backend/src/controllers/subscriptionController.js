@@ -24,14 +24,14 @@ async function createSetupIntent(req, res) {
       requestId: req.requestId,
       message: error.message,
     });
-    return res.status(500).json({ error: 'Erro ao iniciar a validacao segura do cartao com a Stripe.' });
+    return res.status(500).json({ error: 'Erro ao iniciar a validação segura do cartão com a Stripe.' });
   }
 }
 
 async function getPublicBillingConfig(req, res) {
   if (!stripePublishableKey) {
     return res.status(503).json({
-      error: 'A chave publica da Stripe nao esta configurada no ambiente.',
+      error: 'A chave pública da Stripe não está configurada no ambiente.',
     });
   }
 
@@ -55,7 +55,7 @@ async function createPreapproval(req, res) {
     });
 
     res.status(201).json({
-      message: `Assinatura criada com sucesso! ${billingService.TRIAL_DAYS} dias gratis ativados.`,
+      message: `Assinatura criada com sucesso. ${billingService.TRIAL_DAYS} dias grátis ativados.`,
       subscription,
     });
   } catch (error) {
@@ -156,7 +156,7 @@ async function reactivateSubscription(req, res) {
       requestId: req.requestId,
       message: error.message,
     });
-    res.status(500).json({ error: 'Erro ao reativar a assinatura. Verifique os dados do cartao e tente novamente.' });
+    res.status(500).json({ error: 'Erro ao reativar a assinatura. Verifique os dados do cartão e tente novamente.' });
   }
 }
 
@@ -218,7 +218,7 @@ async function createPortalSession(req, res) {
       requestId: req.requestId,
       message: error.message,
     });
-    res.status(500).json({ error: 'Erro ao abrir o portal de cobranca da Stripe.' });
+    res.status(500).json({ error: 'Erro ao abrir o portal de cobrança da Stripe.' });
   }
 }
 

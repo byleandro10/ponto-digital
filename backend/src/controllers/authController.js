@@ -49,37 +49,41 @@ async function register(req, res) {
     paymentMethodId = sanitize(paymentMethodId);
 
     if (!companyName || !cnpj || !name || !email || !password) {
-      return res.status(400).json({ error: 'Todos os campos sao obrigatorios.' });
+      return res.status(400).json({ error: 'Todos os campos são obrigatórios.' });
     }
 
     if (!isValidEmail(email)) {
-      return res.status(400).json({ error: 'E-mail invalido. Informe um e-mail valido (ex.: usuario@empresa.com).' });
+      return res.status(400).json({ error: 'E-mail inválido. Informe um e-mail válido, como usuario@empresa.com.' });
     }
 
     if (!isValidCNPJ(cnpj)) {
-      return res.status(400).json({ error: 'CNPJ invalido. Informe um CNPJ valido com 14 digitos.' });
+      return res.status(400).json({ error: 'CNPJ inválido. Informe um CNPJ válido com 14 dígitos.' });
     }
     cnpj = formatCNPJ(cnpj);
 
     if (!isValidPassword(password)) {
-      return res.status(400).json({ error: 'A senha deve ter no minimo 8 caracteres, com pelo menos 1 letra maiuscula, 1 letra minuscula e 1 numero.' });
+      return res.status(400).json({ error: 'A senha deve ter no mínimo 8 caracteres, com pelo menos 1 letra maiúscula, 1 letra minúscula e 1 número.' });
     }
 
     if (name.length < 3) {
-      return res.status(400).json({ error: 'O nome deve ter no minimo 3 caracteres.' });
+      return res.status(400).json({ error: 'O nome deve ter no mínimo 3 caracteres.' });
     }
 
     const requiresBillingOnSignup = Boolean(plan || paymentMethodId);
-    const isHostedCheckoutFlow = Boolean(plan) && !paymentMethodId;
+    if (requiresBillingOnSignup && !paymentMethodId) {
+      return res.status(400).json({
+        error: 'Valide o cartão pela Stripe antes de concluir o cadastro.',
+      });
+    }
 
     const existingCompany = await prisma.company.findUnique({ where: { cnpj } });
     if (existingCompany) {
-      return res.status(400).json({ error: 'Este CNPJ ja possui uma empresa cadastrada.' });
+      return res.status(400).json({ error: 'Este CNPJ já possui uma empresa cadastrada.' });
     }
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      return res.status(400).json({ error: 'Este e-mail ja esta em uso.' });
+      return res.status(400).json({ error: 'Este e-mail já está em uso.' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
@@ -88,14 +92,13 @@ async function register(req, res) {
     const trialEndsAt = new Date();
     trialEndsAt.setDate(trialEndsAt.getDate() + TRIAL_DAYS);
     const now = new Date();
-    const initialStatus = isHostedCheckoutFlow ? BILLING_STATUS.EXPIRED : BILLING_STATUS.TRIAL;
 
     const company = await prisma.company.create({
       data: {
         name: companyName,
         cnpj,
         plan: plan.toLowerCase(),
-        subscriptionStatus: initialStatus,
+        subscriptionStatus: BILLING_STATUS.TRIAL,
         trialEndsAt,
         users: {
           create: { name, email, password: hashedPassword, role: 'ADMIN' },
@@ -103,7 +106,7 @@ async function register(req, res) {
         subscriptions: {
           create: {
             plan,
-            status: initialStatus,
+            status: BILLING_STATUS.TRIAL,
             trialStart: now,
             trialEndsAt,
             currentPeriodStart: now,
@@ -117,7 +120,7 @@ async function register(req, res) {
     createdCompanyId = company.id;
 
     let subscription = null;
-    if (requiresBillingOnSignup && !isHostedCheckoutFlow) {
+    if (requiresBillingOnSignup) {
       try {
         subscription = await billingService.createSubscription({
           companyId: company.id,
@@ -134,7 +137,7 @@ async function register(req, res) {
         }
 
         return res.status(422).json({
-          error: `Falha ao validar o cartao e criar a assinatura na Stripe: ${error.message}`,
+          error: `Falha ao validar o cartão e criar a assinatura na Stripe: ${error.message}`,
         });
       }
     }
@@ -143,15 +146,13 @@ async function register(req, res) {
     const token = generateToken({ id: user.id, role: user.role, companyId: company.id, type: 'admin' });
 
     res.status(201).json({
-      message: isHostedCheckoutFlow
-        ? 'Conta criada com sucesso. Continue no checkout seguro da Stripe para validar o cartao.'
-        : requiresBillingOnSignup
-          ? 'Empresa cadastrada e assinatura iniciada com sucesso!'
-          : 'Empresa cadastrada com sucesso!',
+      message: requiresBillingOnSignup
+        ? 'Empresa cadastrada e assinatura iniciada com sucesso.'
+        : 'Empresa cadastrada com sucesso.',
       token,
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
       company: { id: company.id, name: company.name, cnpj: company.cnpj, plan: company.plan },
-      subscriptionStatus: subscription?.status || initialStatus,
+      subscriptionStatus: subscription?.status || BILLING_STATUS.TRIAL,
       trialEndsAt: subscription?.trialEndsAt || trialEndsAt,
       subscription,
     });
@@ -162,7 +163,7 @@ async function register(req, res) {
     }
     if (error.code === 'P2002') {
       const field = error.meta?.target?.includes('email') ? 'E-mail' : 'CNPJ';
-      return res.status(400).json({ error: `${field} ja cadastrado.` });
+      return res.status(400).json({ error: `${field} já cadastrado.` });
     }
     res.status(500).json({ error: 'Erro ao registrar a empresa. Tente novamente.' });
   }
@@ -173,15 +174,15 @@ async function loginAdmin(req, res) {
     let { email, password } = req.body;
     email = sanitize(email)?.toLowerCase();
     if (!email || !password) {
-      return res.status(400).json({ error: 'E-mail e senha sao obrigatorios.' });
+      return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' });
     }
     if (!isValidEmail(email)) {
-      return res.status(400).json({ error: 'E-mail invalido.' });
+      return res.status(400).json({ error: 'E-mail inválido.' });
     }
     const user = await prisma.user.findUnique({ where: { email }, include: { company: true } });
-    if (!user) return res.status(401).json({ error: 'Credenciais invalidas.' });
+    if (!user) return res.status(401).json({ error: 'Credenciais inválidas.' });
     const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) return res.status(401).json({ error: 'Credenciais invalidas.' });
+    if (!validPassword) return res.status(401).json({ error: 'Credenciais inválidas.' });
     const token = generateToken({ id: user.id, role: user.role, companyId: user.companyId, type: 'admin' });
     _trackLoginDirect(user.companyId, 'admin').catch(() => {});
     res.json({
@@ -202,12 +203,12 @@ async function loginEmployee(req, res) {
     let { cpf, password } = req.body;
     cpf = sanitize(cpf)?.replace(/\D/g, '');
     if (!cpf || !password) {
-      return res.status(400).json({ error: 'CPF e senha sao obrigatorios.' });
+      return res.status(400).json({ error: 'CPF e senha são obrigatórios.' });
     }
     const employee = await prisma.employee.findUnique({ where: { cpf }, include: { company: true } });
-    if (!employee || !employee.active) return res.status(401).json({ error: 'Credenciais invalidas.' });
+    if (!employee || !employee.active) return res.status(401).json({ error: 'Credenciais inválidas.' });
     const validPassword = await bcrypt.compare(password, employee.password);
-    if (!validPassword) return res.status(401).json({ error: 'Credenciais invalidas.' });
+    if (!validPassword) return res.status(401).json({ error: 'Credenciais inválidas.' });
     const token = generateToken({ id: employee.id, companyId: employee.companyId, type: 'employee' });
     _trackLoginDirect(employee.companyId, 'employee').catch(() => {});
     res.json({
@@ -232,14 +233,14 @@ async function changePasswordAdmin(req, res) {
   try {
     const { currentPassword, newPassword } = req.body;
     if (!currentPassword || !newPassword) {
-      return res.status(400).json({ error: 'Senha atual e nova senha sao obrigatorias.' });
+      return res.status(400).json({ error: 'Senha atual e nova senha são obrigatórias.' });
     }
     if (!isValidPassword(newPassword)) {
-      return res.status(400).json({ error: 'Nova senha deve ter no minimo 8 caracteres, com pelo menos 1 maiuscula, 1 minuscula e 1 numero.' });
+      return res.status(400).json({ error: 'Nova senha deve ter no mínimo 8 caracteres, com pelo menos 1 maiúscula, 1 minúscula e 1 número.' });
     }
 
     const user = await prisma.user.findUnique({ where: { id: req.userId } });
-    if (!user) return res.status(404).json({ error: 'Usuario nao encontrado.' });
+    if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
 
     const valid = await bcrypt.compare(currentPassword, user.password);
     if (!valid) return res.status(401).json({ error: 'Senha atual incorreta.' });
@@ -247,7 +248,7 @@ async function changePasswordAdmin(req, res) {
     const hashed = await bcrypt.hash(newPassword, 12);
     await prisma.user.update({ where: { id: req.userId }, data: { password: hashed } });
 
-    res.json({ message: 'Senha alterada com sucesso!' });
+    res.json({ message: 'Senha alterada com sucesso.' });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Erro ao alterar senha.' });
@@ -258,14 +259,14 @@ async function changePasswordEmployee(req, res) {
   try {
     const { currentPassword, newPassword } = req.body;
     if (!currentPassword || !newPassword) {
-      return res.status(400).json({ error: 'Senha atual e nova senha sao obrigatorias.' });
+      return res.status(400).json({ error: 'Senha atual e nova senha são obrigatórias.' });
     }
     if (!isValidPassword(newPassword)) {
-      return res.status(400).json({ error: 'Nova senha deve ter no minimo 8 caracteres, com pelo menos 1 maiuscula, 1 minuscula e 1 numero.' });
+      return res.status(400).json({ error: 'Nova senha deve ter no mínimo 8 caracteres, com pelo menos 1 maiúscula, 1 minúscula e 1 número.' });
     }
 
     const employee = await prisma.employee.findUnique({ where: { id: req.employeeId } });
-    if (!employee) return res.status(404).json({ error: 'Funcionario nao encontrado.' });
+    if (!employee) return res.status(404).json({ error: 'Funcionário não encontrado.' });
 
     const valid = await bcrypt.compare(currentPassword, employee.password);
     if (!valid) return res.status(401).json({ error: 'Senha atual incorreta.' });
@@ -273,7 +274,7 @@ async function changePasswordEmployee(req, res) {
     const hashed = await bcrypt.hash(newPassword, 12);
     await prisma.employee.update({ where: { id: req.employeeId }, data: { password: hashed } });
 
-    res.json({ message: 'Senha alterada com sucesso!' });
+    res.json({ message: 'Senha alterada com sucesso.' });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Erro ao alterar senha.' });
