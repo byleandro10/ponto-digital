@@ -20,6 +20,7 @@
     "start": "node backend/src/app.js",
     "postinstall": "npx prisma generate --schema=backend/prisma/schema.prisma",
     "db:push": "npx prisma db push --schema=backend/prisma/schema.prisma",
+    "db:test:mysql2": "node backend/scripts/test-mysql2-connection.js",
     "db:studio": "npx prisma studio --schema=backend/prisma/schema.prisma",
     "test": "cd backend && npm test"
   },
