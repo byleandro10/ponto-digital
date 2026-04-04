@@ -38,6 +38,19 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
 
 app.use(helmet({
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      "script-src": ["'self'", "https://js.stripe.com"],
+      "frame-src": ["'self'", "https://js.stripe.com", "https://hooks.stripe.com"],
+      "connect-src": ["'self'", "https://api.stripe.com", "https://r.stripe.com", "https://m.stripe.network"],
+      "img-src": ["'self'", "data:", "https://q.stripe.com", "https://*.stripe.com"],
+      "style-src": ["'self'", "'unsafe-inline'"],
+      "font-src": ["'self'", "data:", "https://js.stripe.com"],
+    },
+  },
 }));
 
 app.use((req, res, next) => {

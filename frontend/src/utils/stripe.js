@@ -17,6 +17,7 @@ async function getPublishableKey() {
       .get('/billing/public-config', { timeout: BILLING_REQUEST_TIMEOUT_MS })
       .then((response) => response.data?.publishableKey || '')
       .catch((error) => {
+        publishableKeyPromise = null;
         if (error.code === 'ECONNABORTED') {
           throw new Error('A configuracao da Stripe demorou demais para responder.');
         }
@@ -34,11 +35,17 @@ async function getPublishableKey() {
 
 export async function getStripe() {
   if (!stripePromise) {
-    stripePromise = getPublishableKey().then((key) => loadStripe(key));
+    stripePromise = getPublishableKey()
+      .then((key) => loadStripe(key))
+      .catch((error) => {
+        stripePromise = null;
+        throw error;
+      });
   }
 
   const stripe = await stripePromise;
   if (!stripe) {
+    stripePromise = null;
     throw new Error('Nao foi possivel carregar a Stripe no navegador.');
   }
 

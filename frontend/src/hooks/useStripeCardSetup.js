@@ -68,6 +68,7 @@ export function useStripeCardSetup({ enabled, email }) {
       }
 
       elementsRef.current = stripe.elements();
+      const container = containerRef.current;
       const cardElement = elementsRef.current.create('card', CARD_ELEMENT_OPTIONS);
       cardElement.on('change', (event) => {
         const nextError = event.error?.message || '';
@@ -76,8 +77,16 @@ export function useStripeCardSetup({ enabled, email }) {
         setCardComplete(nextComplete);
         setStripeReady(nextComplete && !nextError);
       });
-      cardElement.mount(containerRef.current);
+      cardElement.mount(container);
       cardElementRef.current = cardElement;
+
+      window.setTimeout(() => {
+        const iframeMounted = Boolean(container?.querySelector('iframe'));
+        if (!iframeMounted) {
+          setStripeLoadError('O formulario da Stripe nao conseguiu renderizar. Recarregue a pagina ou tente novamente.');
+          setStripeReady(false);
+        }
+      }, 1200);
     } catch (error) {
       setStripeLoadError(error.response?.data?.error || error.message || 'Nao foi possivel carregar o formulario seguro da Stripe.');
     } finally {
