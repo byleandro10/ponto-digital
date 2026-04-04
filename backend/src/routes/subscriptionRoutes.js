@@ -35,11 +35,11 @@ router.use(authMiddleware);
 router.use(roleGuard('ADMIN', 'SUPER_ADMIN'));
 router.use(subscriptionLimiter);
 
-router.post('/create-preapproval', allowBodyFields(['plan', 'paymentMethodId']), createPreapproval);
+router.post('/create-preapproval', allowBodyFields(['plan', 'paymentMethodId', 'setupIntentId']), createPreapproval);
 router.get('/status', allowQueryFields([]), getStatus);
-router.put('/change-plan', allowBodyFields(['plan', 'paymentMethodId']), changePlan);
+router.put('/change-plan', allowBodyFields(['plan', 'paymentMethodId', 'setupIntentId']), changePlan);
 router.post('/cancel', allowBodyFields([]), cancelSubscription);
 router.get('/payments', allowQueryFields([]), getPayments);
-router.post('/reactivate', allowBodyFields(['plan', 'paymentMethodId']), reactivateSubscription);
+router.post('/reactivate', allowBodyFields(['plan', 'paymentMethodId', 'setupIntentId']), reactivateSubscription);
 
 module.exports = router;

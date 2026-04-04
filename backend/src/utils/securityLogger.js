@@ -10,6 +10,7 @@ function getClientIp(req) {
 function logSecurityEvent(req, event, details = {}) {
   const payload = {
     event,
+    requestId: req.requestId || null,
     method: req.method,
     path: req.originalUrl,
     ip: getClientIp(req),

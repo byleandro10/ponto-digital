@@ -22,9 +22,13 @@ const mockPrisma = {
 
 const mockStripeService = {
   createCustomer: jest.fn(),
+  updateCustomer: jest.fn(),
   attachPaymentMethod: jest.fn(),
+  retrievePaymentMethod: jest.fn(),
   createSubscription: jest.fn(),
+  updateSubscription: jest.fn(),
   cancelSubscription: jest.fn(),
+  retrieveSubscription: jest.fn(),
 };
 
 jest.mock('../src/config/database', () => mockPrisma);
@@ -71,11 +75,14 @@ describe('billingService with Stripe', () => {
       name: 'Admin',
     });
     mockStripeService.createCustomer.mockResolvedValue({ id: 'cus_123' });
+    mockStripeService.retrievePaymentMethod.mockResolvedValue({ id: 'pm_123', customer: 'cus_123' });
     mockStripeService.createSubscription.mockResolvedValue({
       id: 'sub_stripe_123',
       status: 'trialing',
       current_period_start: Math.floor(now.getTime() / 1000),
       current_period_end: Math.floor(trialEndsAt.getTime() / 1000),
+      default_payment_method: 'pm_123',
+      items: { data: [{ price: { id: 'price_123' } }] },
     });
     mockPrisma.subscription.update.mockImplementation(async ({ data }) => ({
       id: 'sub-1',

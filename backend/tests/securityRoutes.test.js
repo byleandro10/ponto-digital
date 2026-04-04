@@ -18,6 +18,7 @@ jest.mock('../src/controllers/timeEntryController', () => ({
 }));
 
 jest.mock('../src/controllers/subscriptionController', () => ({
+  getPublicBillingConfig: (req, res) => res.status(200).json({ ok: true }),
   createSetupIntent: (req, res) => res.status(201).json({ ok: true }),
   createPreapproval: (req, res) => res.status(200).json({ ok: true }),
   getStatus: (req, res) => res.status(200).json({ ok: true }),
@@ -92,7 +93,7 @@ describe('Security route protections', () => {
 
     const response = await request(app)
       .post('/api/subscriptions/create-preapproval')
-      .send({ plan: 'professional', cardTokenId: 'tok_123', email: 'admin@example.com' });
+      .send({ plan: 'professional', paymentMethodId: 'pm_123' });
 
     expect(response.status).toBe(401);
     expect(response.body.error).toMatch(/token/i);
@@ -104,7 +105,7 @@ describe('Security route protections', () => {
     const response = await request(app)
       .post('/api/subscriptions/create-preapproval')
       .set('Authorization', `Bearer ${employeeToken}`)
-      .send({ plan: 'professional', cardTokenId: 'tok_123', email: 'admin@example.com' });
+      .send({ plan: 'professional', paymentMethodId: 'pm_123' });
 
     expect(response.status).toBe(403);
     expect(response.body.error).toMatch(/permissao/i);

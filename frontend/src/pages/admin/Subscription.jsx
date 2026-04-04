@@ -10,10 +10,33 @@ import { getStripe } from '../../utils/stripe';
 const PLAN_NAMES = { BASIC: 'Basico', PROFESSIONAL: 'Profissional', ENTERPRISE: 'Empresarial' };
 const PLAN_PRICES = { BASIC: 49, PROFESSIONAL: 99, ENTERPRISE: 199 };
 const PLANS = [
-  { key: 'BASIC', name: 'Básico', price: 49, features: ['Até 15 funcionários', 'Registro de ponto', 'Relatórios básicos'] },
-  { key: 'PROFESSIONAL', name: 'Profissional', price: 99, features: ['Até 50 funcionários', 'Cerca virtual', 'Relatórios avançados', 'Banco de horas'] },
-  { key: 'ENTERPRISE', name: 'Empresarial', price: 199, features: ['Funcionários ilimitados', 'Todas as funcionalidades', 'Suporte prioritário'] },
+  { key: 'BASIC', name: 'Basico', price: 49, features: ['Ate 15 funcionarios', 'Registro de ponto', 'Relatorios basicos'] },
+  { key: 'PROFESSIONAL', name: 'Profissional', price: 99, features: ['Ate 50 funcionarios', 'Cerca virtual', 'Relatorios avancados', 'Banco de horas'] },
+  { key: 'ENTERPRISE', name: 'Empresarial', price: 199, features: ['Funcionarios ilimitados', 'Todas as funcionalidades', 'Suporte prioritario'] },
 ];
+
+const PAYMENT_ELEMENT_OPTIONS = {
+  layout: 'tabs',
+  fields: {
+    billingDetails: {
+      address: {
+        country: 'never',
+        postalCode: 'never',
+      },
+    },
+  },
+};
+
+const ELEMENTS_APPEARANCE = {
+  theme: 'stripe',
+  variables: {
+    colorPrimary: '#2563eb',
+    colorText: '#111827',
+    colorDanger: '#dc2626',
+    fontFamily: 'system-ui, sans-serif',
+    borderRadius: '12px',
+  },
+};
 
 export default function Subscription() {
   const { user, updateSubscriptionStatus } = useAuth();
@@ -28,13 +51,14 @@ export default function Subscription() {
   const [stripeReady, setStripeReady] = useState(false);
   const [stripeLoading, setStripeLoading] = useState(false);
   const [stripeLoadError, setStripeLoadError] = useState('');
-  const [cardError, setCardError] = useState('');
+  const [paymentError, setPaymentError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const cardContainerRef = useRef(null);
+  const paymentContainerRef = useRef(null);
   const stripeRef = useRef(null);
   const elementsRef = useRef(null);
-  const cardElementRef = useRef(null);
+  const paymentElementRef = useRef(null);
+  const setupIntentIdRef = useRef(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -62,58 +86,73 @@ export default function Subscription() {
     fetchData();
   }, [fetchData]);
 
-  useEffect(() => {
-    if (!showCardForm || !cardContainerRef.current) return undefined;
+  const mountPaymentElement = useCallback(async () => {
+    if (!paymentContainerRef.current) {
+      return;
+    }
 
-    let cancelled = false;
-    (async () => {
-      setStripeLoading(true);
-      setStripeLoadError('');
+    setStripeLoading(true);
+    setStripeLoadError('');
+    setPaymentError('');
 
-      try {
-        const stripe = await getStripe();
-        if (!stripe || cancelled || !cardContainerRef.current) return;
+    try {
+      const [{ data }, stripe] = await Promise.all([
+        api.post('/billing/setup-intent', { email: user?.email || '' }),
+        getStripe(),
+      ]);
 
-        stripeRef.current = stripe;
-        elementsRef.current = stripe.elements();
-        const card = elementsRef.current.create('card', {
-          hidePostalCode: true,
-          style: {
-            base: {
-              fontSize: '16px',
-              color: '#111827',
-              fontFamily: 'Inter, system-ui, sans-serif',
-              '::placeholder': { color: '#9ca3af' },
-            },
-            invalid: {
-              color: '#dc2626',
-            },
-          },
-        });
-        card.mount(cardContainerRef.current);
-        card.on('change', (event) => setCardError(event.error?.message || ''));
-        cardElementRef.current = card;
-        setStripeReady(true);
-      } catch (error) {
-        setStripeLoadError(error.message || 'Não foi possível carregar o formulário seguro da Stripe.');
-      } finally {
-        if (!cancelled) {
-          setStripeLoading(false);
-        }
+      if (!stripe || !data?.clientSecret) {
+        throw new Error('Nao foi possivel carregar o formulario seguro da Stripe.');
       }
+
+      stripeRef.current = stripe;
+      setupIntentIdRef.current = data.setupIntentId;
+
+      if (paymentElementRef.current) {
+        paymentElementRef.current.unmount();
+        paymentElementRef.current = null;
+      }
+
+      elementsRef.current = stripe.elements({
+        clientSecret: data.clientSecret,
+        appearance: ELEMENTS_APPEARANCE,
+      });
+
+      const paymentElement = elementsRef.current.create('payment', PAYMENT_ELEMENT_OPTIONS);
+      paymentElement.on('change', (event) => {
+        setPaymentError(event.error?.message || '');
+        setStripeReady(Boolean(event.complete));
+      });
+      paymentElement.mount(paymentContainerRef.current);
+      paymentElementRef.current = paymentElement;
+    } catch (error) {
+      setStripeLoadError(error.response?.data?.error || error.message || 'Nao foi possivel carregar o formulario seguro da Stripe.');
+    } finally {
+      setStripeLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!showCardForm || !paymentContainerRef.current) return undefined;
+
+    let active = true;
+    (async () => {
+      if (!active) return;
+      await mountPaymentElement();
     })();
 
     return () => {
-      cancelled = true;
+      active = false;
       setStripeReady(false);
       setStripeLoadError('');
-      if (cardElementRef.current) {
-        cardElementRef.current.unmount();
-        cardElementRef.current = null;
+      setPaymentError('');
+      if (paymentElementRef.current) {
+        paymentElementRef.current.unmount();
+        paymentElementRef.current = null;
       }
       elementsRef.current = null;
     };
-  }, [showCardForm]);
+  }, [showCardForm, mountPaymentElement]);
 
   const needsReactivation = !subscription ||
     ['CANCELLED', 'EXPIRED', 'PAST_DUE'].includes(subscription?.status) ||
@@ -121,33 +160,43 @@ export default function Subscription() {
 
   const handleSubmit = useCallback(async () => {
     if (!selectedPlan) { toast.error('Selecione um plano.'); return; }
-    if (!cardHolder || cardHolder.length < 3) { toast.error('O nome do titular é obrigatório.'); return; }
+    if (!cardHolder || cardHolder.length < 3) { toast.error('O nome do titular e obrigatorio.'); return; }
     if (stripeLoadError) { toast.error(stripeLoadError); return; }
-    if (!stripeReady || !cardElementRef.current) { toast.error('O formulário do cartão ainda está carregando.'); return; }
-    if (cardError) { toast.error(cardError); return; }
+    if (paymentError) { toast.error(paymentError); return; }
+    if (!stripeReady || !stripeRef.current || !elementsRef.current) { toast.error('Preencha os dados do cartao para continuar.'); return; }
 
     setSubmitting(true);
     try {
-      const setupIntentRes = await api.post('/subscriptions/setup-intent', { email: user?.email || user?.company?.email || '' });
       const stripe = stripeRef.current;
-      const { setupIntent, error } = await stripe.confirmCardSetup(setupIntentRes.data.clientSecret, {
-        payment_method: {
-          card: cardElementRef.current,
-          billing_details: {
-            name: cardHolder,
-            email: user?.email || '',
+      const elements = elementsRef.current;
+
+      const submitResult = await elements.submit();
+      if (submitResult?.error) {
+        throw new Error(submitResult.error.message || 'Revise os dados do cartao antes de continuar.');
+      }
+
+      const { setupIntent, error } = await stripe.confirmSetup({
+        elements,
+        redirect: 'if_required',
+        confirmParams: {
+          payment_method_data: {
+            billing_details: {
+              name: cardHolder,
+              email: user?.email || '',
+            },
           },
         },
       });
 
       if (error) {
-        throw new Error(error.message || 'Falha ao validar o cartão na Stripe.');
+        throw new Error(error.message || 'Falha ao validar o cartao na Stripe.');
       }
 
       const endpoint = needsReactivation ? '/subscriptions/reactivate' : '/subscriptions/change-plan';
       const method = needsReactivation ? api.post : api.put;
       const response = await method(endpoint, {
         paymentMethodId: setupIntent.payment_method,
+        setupIntentId: setupIntent.id || setupIntentIdRef.current,
         plan: selectedPlan,
       });
 
@@ -155,14 +204,14 @@ export default function Subscription() {
       setSubscription(nextSubscription);
       updateSubscriptionStatus(nextSubscription.status, nextSubscription.trialEndsAt || null);
       setShowCardForm(false);
-      toast.success(needsReactivation ? 'Assinatura ativada com sucesso!' : 'Plano/cartao atualizados com sucesso!');
+      toast.success(needsReactivation ? 'Assinatura ativada com sucesso!' : 'Plano e cartao atualizados com sucesso!');
       navigate('/admin/dashboard');
     } catch (error) {
       toast.error(error.response?.data?.error || error.message || 'Erro ao processar pagamento.');
     } finally {
       setSubmitting(false);
     }
-  }, [selectedPlan, cardHolder, stripeReady, stripeLoadError, cardError, user, needsReactivation, updateSubscriptionStatus, navigate]);
+  }, [selectedPlan, cardHolder, stripeReady, stripeLoadError, paymentError, user, needsReactivation, updateSubscriptionStatus, navigate]);
 
   const handleCancel = async () => {
     if (!window.confirm('Tem certeza que deseja cancelar sua assinatura?')) return;
@@ -202,7 +251,7 @@ export default function Subscription() {
               <FiAlertTriangle className="w-6 h-6 text-red-500 mt-0.5 shrink-0" />
               <div>
                 <h3 className="text-lg font-bold text-red-800">Assinatura inativa</h3>
-                <p className="text-sm text-red-600 mt-1">Cadastre um cartão na Stripe para reativar o acesso ao sistema.</p>
+                <p className="text-sm text-red-600 mt-1">Cadastre um cartao na Stripe para reativar o acesso ao sistema.</p>
               </div>
             </div>
           </div>
@@ -220,10 +269,10 @@ export default function Subscription() {
               <div className="bg-gray-50 rounded-xl p-4">
                 <p className="text-sm text-gray-500">Plano</p>
                 <p className="text-xl font-bold text-gray-900">{PLAN_NAMES[subscription.plan] || subscription.plan}</p>
-                <p className="text-sm text-gray-500 mt-1">R${PLAN_PRICES[subscription.plan] || 0}/mês</p>
+                <p className="text-sm text-gray-500 mt-1">R${PLAN_PRICES[subscription.plan] || 0}/mes</p>
               </div>
               <div className="bg-gray-50 rounded-xl p-4">
-                <p className="text-sm text-gray-500">Período atual</p>
+                <p className="text-sm text-gray-500">Periodo atual</p>
                 <p className="text-sm font-bold text-gray-900">{subscription.currentPeriodEnd ? new Date(subscription.currentPeriodEnd).toLocaleDateString('pt-BR') : '-'}</p>
               </div>
               <div className="bg-gray-50 rounded-xl p-4">
@@ -233,7 +282,7 @@ export default function Subscription() {
             </div>
             <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100">
               <button onClick={() => setShowCardForm(true)} className="text-sm text-blue-600 hover:text-blue-800 transition font-medium">
-                Alterar cartão / plano
+                Alterar cartao / plano
               </button>
               <button onClick={handleCancel} disabled={cancelling} className="text-sm text-red-500 hover:text-red-700 transition disabled:opacity-50">
                 {cancelling ? 'Cancelando...' : 'Cancelar assinatura'}
@@ -246,9 +295,9 @@ export default function Subscription() {
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <h2 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2">
               <FiCreditCard className="text-blue-600" />
-              {needsReactivation ? 'Ativar assinatura' : 'Atualizar cartão / plano'}
+              {needsReactivation ? 'Ativar assinatura' : 'Atualizar cartao / plano'}
             </h2>
-            <p className="text-sm text-gray-500 mb-6">Os dados do cartão são coletados pela Stripe.</p>
+            <p className="text-sm text-gray-500 mb-6">Os dados do cartao sao coletados diretamente pela Stripe.</p>
 
             <div className="mb-6">
               <label className="block text-sm font-semibold text-gray-700 mb-3">Selecione o plano</label>
@@ -284,16 +333,16 @@ export default function Subscription() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nome do titular</label>
-                <input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="Nome como aparece no cartão" className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
+                <input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="Nome como aparece no cartao" className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Dados do cartão</label>
-                <div className="w-full px-4 py-4 rounded-lg border border-gray-300">
-                  {stripeLoading && <p className="text-sm text-gray-500">Carregando formulário seguro da Stripe...</p>}
-                  <div ref={cardContainerRef} className={stripeLoading ? 'opacity-0 h-0 overflow-hidden' : ''} />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Dados do cartao</label>
+                <div className="w-full px-4 py-4 rounded-lg border border-gray-300 min-h-[92px]">
+                  {stripeLoading && <p className="text-sm text-gray-500">Carregando formulario seguro da Stripe...</p>}
+                  <div ref={paymentContainerRef} className={stripeLoading ? 'opacity-0 h-0 overflow-hidden' : ''} />
                 </div>
                 {stripeLoadError && <p className="text-sm text-red-600 mt-2">{stripeLoadError}</p>}
-                {cardError && <p className="text-sm text-red-600 mt-2">{cardError}</p>}
+                {paymentError && <p className="text-sm text-red-600 mt-2">{paymentError}</p>}
               </div>
               <div className="flex items-center gap-4 text-xs text-gray-400 pt-2">
                 <span className="flex items-center gap-1"><FiLock /> Criptografia SSL</span>
@@ -301,8 +350,8 @@ export default function Subscription() {
                 <span className="flex items-center gap-1"><FiCreditCard /> PCI Compliant</span>
               </div>
               <div className="flex gap-3 pt-2">
-                <button onClick={handleSubmit} disabled={submitting || !stripeReady} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition disabled:opacity-50 flex items-center justify-center gap-2">
-                  {submitting ? 'Processando...' : needsReactivation ? 'Ativar assinatura' : 'Atualizar cartão / plano'}
+                <button onClick={handleSubmit} disabled={submitting || stripeLoading || !stripeReady} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition disabled:opacity-50 flex items-center justify-center gap-2">
+                  {submitting ? 'Processando...' : needsReactivation ? 'Ativar assinatura' : 'Atualizar cartao / plano'}
                 </button>
                 {!needsReactivation && (
                   <button onClick={() => setShowCardForm(false)} className="px-6 py-3 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50 transition font-medium">

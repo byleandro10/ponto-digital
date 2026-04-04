@@ -32,7 +32,7 @@ router.use(authMiddleware);
 router.use(roleGuard('ADMIN', 'SUPER_ADMIN'));
 router.use(billingLimiter);
 
-router.post('/create-subscription', allowBodyFields(['plan', 'paymentMethodId']), createPreapproval);
+router.post('/create-subscription', allowBodyFields(['plan', 'paymentMethodId', 'setupIntentId']), createPreapproval);
 router.post('/cancel-subscription', allowBodyFields([]), cancelSubscription);
 router.get('/subscription-status', allowQueryFields([]), getStatus);
 

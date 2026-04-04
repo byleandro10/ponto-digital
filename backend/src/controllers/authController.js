@@ -39,7 +39,7 @@ async function register(req, res) {
   let createdCompanyId = null;
 
   try {
-    let { companyName, cnpj, name, email, password, plan, paymentMethodId } = req.body;
+    let { companyName, cnpj, name, email, password, plan, paymentMethodId, setupIntentId } = req.body;
 
     companyName = sanitize(companyName);
     cnpj = sanitize(cnpj);
@@ -127,6 +127,7 @@ async function register(req, res) {
           userId: company.users[0].id,
           plan,
           paymentMethodId,
+          setupIntentId,
         });
       } catch (error) {
         await cleanupFailedCompanyRegistration(company.id);

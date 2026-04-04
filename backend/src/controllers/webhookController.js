@@ -1,40 +1,120 @@
+const prisma = require('../config/database');
 const billingService = require('../services/billingService');
 const stripeService = require('../services/stripeService');
 
-async function handleStripeWebhook(req, res) {
+async function markWebhookEvent(eventId, data) {
+  await prisma.webhookEvent.update({
+    where: { eventId },
+    data,
+  });
+}
+
+async function reserveWebhookEvent({ eventId, eventType, requestId }) {
   try {
-    const secret = process.env.STRIPE_WEBHOOK_SECRET;
-    if (!secret) {
-      console.error('[Webhook] STRIPE_WEBHOOK_SECRET nao configurado.');
-      return res.status(500).json({ error: 'Webhook secret not configured' });
+    await prisma.webhookEvent.create({
+      data: {
+        provider: 'stripe',
+        eventId,
+        eventType,
+        requestId: requestId || null,
+        status: 'PROCESSING',
+      },
+    });
+    return { isDuplicate: false };
+  } catch (error) {
+    if (error.code === 'P2002') {
+      return { isDuplicate: true };
     }
+    throw error;
+  }
+}
 
-    const signature = req.headers['stripe-signature'];
-    if (!signature) {
-      return res.status(400).json({ error: 'Missing Stripe signature' });
-    }
+async function processStripeEvent(event) {
+  switch (event.type) {
+    case 'customer.created':
+      await billingService.handleStripeCustomerEvent(event.data.object);
+      return;
+    case 'customer.subscription.created':
+    case 'customer.subscription.updated':
+    case 'customer.subscription.deleted':
+      await billingService.handleStripeSubscriptionEvent(event.data.object);
+      return;
+    case 'invoice.created':
+    case 'invoice.paid':
+    case 'invoice.payment_failed':
+    case 'invoice.payment_succeeded':
+      await billingService.handleStripeInvoiceEvent(event.data.object);
+      return;
+    case 'payment_intent.succeeded':
+    case 'payment_intent.payment_failed':
+      await billingService.handleStripePaymentIntentEvent(event.data.object);
+      return;
+    case 'setup_intent.succeeded':
+    case 'setup_intent.requires_action':
+    case 'setup_intent.setup_failed':
+      await billingService.handleStripeSetupIntentEvent(event.data.object);
+      return;
+    case 'payment_method.attached':
+      await billingService.handleStripePaymentMethodAttached(event.data.object);
+      return;
+    default:
+      console.log('[Webhook] Evento Stripe ignorado:', event.type);
+  }
+}
 
-    const event = stripeService.constructWebhookEvent(req.body, signature, secret);
+async function handleStripeWebhook(req, res) {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret) {
+    console.error('[Webhook] STRIPE_WEBHOOK_SECRET nao configurado.');
+    return res.status(500).json({ error: 'Webhook secret not configured' });
+  }
 
-    switch (event.type) {
-      case 'invoice.payment_succeeded':
-      case 'invoice.payment_failed':
-        await billingService.handleStripeInvoiceEvent(event.data.object);
-        break;
-      case 'customer.subscription.created':
-      case 'customer.subscription.updated':
-      case 'customer.subscription.deleted':
-        await billingService.handleStripeSubscriptionEvent(event.data.object);
-        break;
-      default:
-        console.log('[Webhook] Evento Stripe ignorado:', event.type);
-        break;
-    }
+  const signature = req.headers['stripe-signature'];
+  if (!signature) {
+    return res.status(400).json({ error: 'Missing Stripe signature' });
+  }
 
+  let event;
+  try {
+    event = stripeService.constructWebhookEvent(req.body, signature, secret);
+  } catch (error) {
+    console.error('[Webhook] Assinatura invalida do webhook Stripe:', {
+      requestId: req.requestId,
+      message: error.message,
+    });
+    return res.status(400).json({ error: 'Webhook signature verification failed' });
+  }
+
+  const reservation = await reserveWebhookEvent({
+    eventId: event.id,
+    eventType: event.type,
+    requestId: req.requestId,
+  });
+
+  if (reservation.isDuplicate) {
+    return res.status(200).json({ received: true, duplicate: true });
+  }
+
+  try {
+    await processStripeEvent(event);
+    await markWebhookEvent(event.id, {
+      status: 'PROCESSED',
+      processedAt: new Date(),
+      errorMessage: null,
+    });
     return res.status(200).json({ received: true });
   } catch (error) {
-    console.error('[Webhook] Erro ao processar webhook da Stripe:', error.message);
-    return res.status(400).json({ error: 'Webhook processing failed' });
+    await markWebhookEvent(event.id, {
+      status: 'FAILED',
+      errorMessage: error.message,
+    });
+    console.error('[Webhook] Erro ao processar webhook da Stripe:', {
+      requestId: req.requestId,
+      eventId: event.id,
+      eventType: event.type,
+      message: error.message,
+    });
+    return res.status(500).json({ error: 'Webhook processing failed' });
   }
 }
 

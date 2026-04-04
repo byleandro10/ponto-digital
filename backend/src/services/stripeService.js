@@ -18,17 +18,32 @@ function getPriceData(planKey) {
     recurring: { interval: 'month' },
     product_data: {
       name: `Ponto Digital - Plano ${PLAN_NAMES[planKey] || planKey}`,
+      metadata: { planKey },
     },
   };
 }
 
-async function createSetupIntent({ metadata = {} } = {}) {
+async function createSetupIntent({ customerId, metadata = {} } = {}) {
   assertStripeConfigured();
-  return stripe.setupIntents.create({
-    payment_method_types: ['card'],
+  const payload = {
+    automatic_payment_methods: {
+      enabled: true,
+      allow_redirects: 'never',
+    },
     usage: 'off_session',
     metadata,
-  });
+  };
+
+  if (customerId) {
+    payload.customer = customerId;
+  }
+
+  return stripe.setupIntents.create(payload);
+}
+
+async function retrieveSetupIntent(setupIntentId) {
+  assertStripeConfigured();
+  return stripe.setupIntents.retrieve(setupIntentId);
 }
 
 async function createCustomer({ email, name, companyId, companyName }) {
@@ -43,14 +58,21 @@ async function createCustomer({ email, name, companyId, companyName }) {
   });
 }
 
+async function updateCustomer(customerId, data = {}) {
+  assertStripeConfigured();
+  return stripe.customers.update(customerId, data);
+}
+
 async function attachPaymentMethod({ customerId, paymentMethodId }) {
   assertStripeConfigured();
 
   try {
     await stripe.paymentMethods.attach(paymentMethodId, { customer: customerId });
   } catch (error) {
-    const message = error?.raw?.message || error.message || '';
-    if (!message.toLowerCase().includes('already attached')) {
+    const code = error?.code || '';
+    const message = String(error?.raw?.message || error.message || '').toLowerCase();
+    const alreadyAttached = code === 'resource_already_exists' || message.includes('already attached');
+    if (!alreadyAttached) {
       throw error;
     }
   }
@@ -62,7 +84,23 @@ async function attachPaymentMethod({ customerId, paymentMethodId }) {
   });
 }
 
-async function createSubscription({ customerId, paymentMethodId, planKey, trialEnd, metadata = {} }) {
+async function retrievePaymentMethod(paymentMethodId) {
+  assertStripeConfigured();
+  return stripe.paymentMethods.retrieve(paymentMethodId);
+}
+
+async function detachPaymentMethod(paymentMethodId) {
+  assertStripeConfigured();
+  return stripe.paymentMethods.detach(paymentMethodId);
+}
+
+async function createSubscription({
+  customerId,
+  paymentMethodId,
+  planKey,
+  trialEnd,
+  metadata = {},
+}) {
   assertStripeConfigured();
 
   const payload = {
@@ -70,11 +108,13 @@ async function createSubscription({ customerId, paymentMethodId, planKey, trialE
     items: [{ price_data: getPriceData(planKey) }],
     default_payment_method: paymentMethodId,
     collection_method: 'charge_automatically',
+    payment_behavior: 'default_incomplete',
     payment_settings: {
+      payment_method_types: ['card'],
       save_default_payment_method: 'on_subscription',
     },
     metadata,
-    expand: ['latest_invoice.payment_intent', 'pending_setup_intent'],
+    expand: ['latest_invoice.payment_intent', 'pending_setup_intent', 'items.data.price'],
   };
 
   if (trialEnd) {
@@ -84,11 +124,39 @@ async function createSubscription({ customerId, paymentMethodId, planKey, trialE
   return stripe.subscriptions.create(payload);
 }
 
-async function updateSubscriptionPaymentMethod({ subscriptionId, paymentMethodId }) {
+async function updateSubscription({
+  subscriptionId,
+  paymentMethodId,
+  planKey,
+  metadata = {},
+  trialEnd,
+}) {
   assertStripeConfigured();
-  return stripe.subscriptions.update(subscriptionId, {
-    default_payment_method: paymentMethodId,
+  const currentSubscription = await stripe.subscriptions.retrieve(subscriptionId, {
+    expand: ['items.data.price'],
   });
+
+  const payload = {
+    default_payment_method: paymentMethodId,
+    payment_behavior: 'default_incomplete',
+    payment_settings: {
+      payment_method_types: ['card'],
+      save_default_payment_method: 'on_subscription',
+    },
+    proration_behavior: 'create_prorations',
+    metadata,
+    items: currentSubscription.items.data.map((item, index) => ({
+      id: item.id,
+      ...(index === 0 ? { price_data: getPriceData(planKey) } : { deleted: true }),
+    })),
+    expand: ['latest_invoice.payment_intent', 'pending_setup_intent', 'items.data.price'],
+  };
+
+  if (trialEnd) {
+    payload.trial_end = Math.floor(new Date(trialEnd).getTime() / 1000);
+  }
+
+  return stripe.subscriptions.update(subscriptionId, payload);
 }
 
 async function cancelSubscription(subscriptionId) {
@@ -99,7 +167,7 @@ async function cancelSubscription(subscriptionId) {
 async function retrieveSubscription(subscriptionId) {
   assertStripeConfigured();
   return stripe.subscriptions.retrieve(subscriptionId, {
-    expand: ['latest_invoice.payment_intent'],
+    expand: ['latest_invoice.payment_intent', 'pending_setup_intent', 'items.data.price'],
   });
 }
 
@@ -117,10 +185,14 @@ function constructWebhookEvent(payload, signature, secret) {
 
 module.exports = {
   createSetupIntent,
+  retrieveSetupIntent,
   createCustomer,
+  updateCustomer,
   attachPaymentMethod,
+  retrievePaymentMethod,
+  detachPaymentMethod,
   createSubscription,
-  updateSubscriptionPaymentMethod,
+  updateSubscription,
   cancelSubscription,
   retrieveSubscription,
   retrieveInvoice,

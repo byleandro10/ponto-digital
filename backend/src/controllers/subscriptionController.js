@@ -8,26 +8,30 @@ async function createSetupIntent(req, res) {
   try {
     const setupIntent = await stripeService.createSetupIntent({
       metadata: {
-        email: req.body?.email || '',
         companyId: req.companyId || '',
         userId: req.userId || '',
+        requestId: req.requestId || '',
       },
     });
 
     return res.status(201).json({
       clientSecret: setupIntent.client_secret,
       setupIntentId: setupIntent.id,
+      requestId: req.requestId,
     });
   } catch (error) {
-    console.error('[Controller] Erro ao criar SetupIntent:', error);
-    return res.status(500).json({ error: 'Erro ao iniciar a validação do cartão com a Stripe.' });
+    console.error('[Billing] Falha ao criar SetupIntent:', {
+      requestId: req.requestId,
+      message: error.message,
+    });
+    return res.status(500).json({ error: 'Erro ao iniciar a validacao segura do cartao com a Stripe.' });
   }
 }
 
 async function getPublicBillingConfig(req, res) {
   if (!stripePublishableKey) {
     return res.status(503).json({
-      error: 'A chave pública da Stripe não está configurada no ambiente de produção.',
+      error: 'A chave publica da Stripe nao esta configurada no ambiente.',
     });
   }
 
@@ -39,7 +43,7 @@ async function getPublicBillingConfig(req, res) {
 
 async function createPreapproval(req, res) {
   try {
-    const { plan, paymentMethodId } = req.body;
+    const { plan, paymentMethodId, setupIntentId } = req.body;
     const companyId = req.companyId;
 
     const subscription = await billingService.createSubscription({
@@ -47,17 +51,21 @@ async function createPreapproval(req, res) {
       userId: req.userId,
       plan,
       paymentMethodId,
+      setupIntentId,
     });
 
     res.status(201).json({
-      message: `Assinatura criada com sucesso! ${billingService.TRIAL_DAYS} dias grátis ativados.`,
+      message: `Assinatura criada com sucesso! ${billingService.TRIAL_DAYS} dias gratis ativados.`,
       subscription,
     });
   } catch (error) {
     if (error instanceof BillingError) {
-      return res.status(error.statusCode).json({ error: error.message });
+      return res.status(error.statusCode).json({ error: error.message, details: error.details || undefined });
     }
-    console.error('[Controller] Erro ao criar assinatura:', error);
+    console.error('[Billing] Erro ao criar assinatura:', {
+      requestId: req.requestId,
+      message: error.message,
+    });
     res.status(500).json({ error: 'Erro ao criar assinatura. Tente novamente.' });
   }
 }
@@ -67,27 +75,34 @@ async function getStatus(req, res) {
     const subscription = await billingService.getSubscriptionStatus(req.companyId);
     res.json({ subscription });
   } catch (error) {
-    console.error('[Controller] Erro ao buscar status:', error);
+    console.error('[Billing] Erro ao buscar status:', {
+      requestId: req.requestId,
+      message: error.message,
+    });
     res.status(500).json({ error: 'Erro ao buscar status da assinatura.' });
   }
 }
 
 async function changePlan(req, res) {
   try {
-    const { plan, paymentMethodId } = req.body;
+    const { plan, paymentMethodId, setupIntentId } = req.body;
     const result = await billingService.changePlan({
       companyId: req.companyId,
       userId: req.userId,
       plan,
       paymentMethodId,
+      setupIntentId,
     });
 
     res.json(result);
   } catch (error) {
     if (error instanceof BillingError) {
-      return res.status(error.statusCode).json({ error: error.message });
+      return res.status(error.statusCode).json({ error: error.message, details: error.details || undefined });
     }
-    console.error('[Controller] Erro ao alterar plano:', error);
+    console.error('[Billing] Erro ao alterar plano:', {
+      requestId: req.requestId,
+      message: error.message,
+    });
     res.status(500).json({ error: 'Erro ao alterar plano.' });
   }
 }
@@ -100,7 +115,10 @@ async function cancelSubscription(req, res) {
     if (error instanceof BillingError) {
       return res.status(error.statusCode).json({ error: error.message });
     }
-    console.error('[Controller] Erro ao cancelar assinatura:', error);
+    console.error('[Billing] Erro ao cancelar assinatura:', {
+      requestId: req.requestId,
+      message: error.message,
+    });
     res.status(500).json({ error: 'Erro ao cancelar assinatura.' });
   }
 }
@@ -110,28 +128,35 @@ async function getPayments(req, res) {
     const payments = await billingService.listPayments(req.companyId);
     res.json({ payments });
   } catch (error) {
-    console.error('[Controller] Erro ao buscar pagamentos:', error);
+    console.error('[Billing] Erro ao buscar pagamentos:', {
+      requestId: req.requestId,
+      message: error.message,
+    });
     res.status(500).json({ error: 'Erro ao buscar pagamentos.' });
   }
 }
 
 async function reactivateSubscription(req, res) {
   try {
-    const { paymentMethodId, plan } = req.body;
+    const { paymentMethodId, plan, setupIntentId } = req.body;
     const result = await billingService.reactivateSubscription({
       companyId: req.companyId,
       userId: req.userId,
       paymentMethodId,
       plan,
+      setupIntentId,
     });
 
     res.json(result);
   } catch (error) {
     if (error instanceof BillingError) {
-      return res.status(error.statusCode).json({ error: error.message });
+      return res.status(error.statusCode).json({ error: error.message, details: error.details || undefined });
     }
-    console.error('[Controller] Erro ao reativar assinatura:', error);
-    res.status(500).json({ error: 'Erro ao reativar a assinatura. Verifique os dados do cartão e tente novamente.' });
+    console.error('[Billing] Erro ao reativar assinatura:', {
+      requestId: req.requestId,
+      message: error.message,
+    });
+    res.status(500).json({ error: 'Erro ao reativar a assinatura. Verifique os dados do cartao e tente novamente.' });
   }
 }
 
