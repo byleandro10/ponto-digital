@@ -21,6 +21,7 @@
     "postinstall": "npx prisma generate --schema=backend/prisma/schema.prisma",
     "db:push": "npx prisma db push --schema=backend/prisma/schema.prisma",
     "db:test:mysql2": "node backend/scripts/test-mysql2-connection.js",
+    "billing:reconcile": "node backend/scripts/reconcile-billing.js",
     "db:studio": "npx prisma studio --schema=backend/prisma/schema.prisma",
     "test": "cd backend && npm test"
   },

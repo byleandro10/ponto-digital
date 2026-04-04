@@ -111,6 +111,11 @@ export default function Subscription() {
     try {
       // Tokenizar cartão via MP SDK
       let cardTokenId = null;
+      let paymentMethodId = null;
+      if (!user?.company?.cnpj) {
+        throw new Error('CNPJ da empresa nao encontrado para validar o cartao.');
+      }
+
       if (window.MercadoPago) {
         try {
           const mp = new window.MercadoPago(import.meta.env.VITE_MP_PUBLIC_KEY || 'TEST-0000-0000', { locale: 'pt-BR' });
@@ -121,18 +126,24 @@ export default function Subscription() {
             cardExpirationMonth: expMonth,
             cardExpirationYear: `20${expYear}`,
             securityCode: cardCvv,
-            identificationType: 'CPF',
-            identificationNumber: '00000000000',
+            identificationType: 'CNPJ',
+            identificationNumber: user.company.cnpj.replace(/\D/g, ''),
           });
           cardTokenId = tokenResult.id;
+          paymentMethodId = tokenResult.payment_method_id || cardBrand;
         } catch (mpErr) {
+          throw new Error(mpErr.message || 'Falha ao tokenizar o cartao no Mercado Pago.');
           console.warn('Tokenização MP falhou (credenciais de teste?):', mpErr.message);
         }
       }
 
+      if (!cardTokenId || !paymentMethodId) {
+        throw new Error('Nao foi possivel validar o cartao no Mercado Pago.');
+      }
+
       await api.post('/subscriptions/reactivate', {
         cardTokenId,
-        email: user?.email || '',
+        paymentMethodId,
         plan: selectedPlan,
       });
 

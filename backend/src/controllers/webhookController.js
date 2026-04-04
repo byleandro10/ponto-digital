@@ -1,137 +1,85 @@
-/**
- * Controller de Webhooks — Mercado Pago
- *
- * Recebe notificações IPN/Webhooks v2 do MP.
- * Valida assinatura HMAC, desduplicada e delega ao billingService.
- */
 const crypto = require('crypto');
 const billingService = require('../services/billingService');
 
-// Set para idempotência em memória (evita reprocessamento de webhooks duplicados)
-// TODO: Em produção, migrar para Redis ou tabela de idempotência no banco.
-const processedWebhooks = new Set();
-const MAX_PROCESSED_CACHE = 10000;
-
-/**
- * POST /api/webhooks/mercadopago
- * Recebe notificações do Mercado Pago (IPN / Webhooks v2)
- */
 async function handleMercadoPagoWebhook(req, res) {
   try {
     const { type, data, action } = req.body;
 
-    // ── Validar assinatura HMAC (obrigatório) ────────────────────
     const secret = process.env.MP_WEBHOOK_SECRET;
     if (!secret) {
-      console.error('[Webhook] MP_WEBHOOK_SECRET não configurado — rejeitando evento');
+      console.error('[Webhook] MP_WEBHOOK_SECRET nao configurado.');
       return res.status(500).json({ error: 'Webhook secret not configured' });
     }
 
     const signature = req.headers['x-signature'];
     const requestId = req.headers['x-request-id'];
 
-    if (!signature || !requestId) {
-      console.warn('[Webhook] Headers x-signature/x-request-id ausentes — rejeitando evento');
-      return res.status(401).json({ error: 'Missing signature headers' });
+    if (!signature || !requestId || !data?.id) {
+      return res.status(401).json({ error: 'Missing signature headers or payload id' });
     }
 
     const isValid = verifyWebhookSignature({
       signature,
       requestId,
-      dataId: data?.id,
+      dataId: data.id,
       secret,
     });
 
     if (!isValid) {
-      console.warn('[Webhook] Assinatura HMAC inválida — rejeitando evento');
       return res.status(401).json({ error: 'Invalid signature' });
     }
 
-    // Responder ao MP somente após validação HMAC
-    res.status(200).json({ received: true });
-
-    // ── Idempotência ─────────────────────────────────────────────
-    const idempotencyKey = `${type || action}:${data?.id}`;
-    if (processedWebhooks.has(idempotencyKey)) {
-      console.log('[Webhook] Evento já processado (idempotência):', idempotencyKey);
-      return;
-    }
-
-    // Limitar tamanho do cache
-    if (processedWebhooks.size >= MAX_PROCESSED_CACHE) {
-      const firstKey = processedWebhooks.values().next().value;
-      processedWebhooks.delete(firstKey);
-    }
-    processedWebhooks.add(idempotencyKey);
-
-    // ── Log de auditoria ─────────────────────────────────────────
-    console.log('[Webhook] Evento recebido:', {
-      type,
-      action,
-      dataId: data?.id,
-      requestId,
-      timestamp: new Date().toISOString(),
-    });
-
-    // ── Roteamento de eventos ────────────────────────────────────
-    if (type === 'payment' && data?.id) {
+    if (isPaymentEvent(type, action)) {
       await billingService.handlePaymentWebhook(data.id);
-    } else if (type === 'subscription_preapproval' && data?.id) {
+    } else if (isPreapprovalEvent(type, action)) {
       await billingService.handlePreapprovalWebhook(data.id);
-    } else if (action && data?.id) {
-      // Formato alternativo de webhook (v2)
-      if (action.startsWith('payment.')) {
-        await billingService.handlePaymentWebhook(data.id);
-      } else if (action.startsWith('subscription_preapproval.')) {
-        await billingService.handlePreapprovalWebhook(data.id);
-      }
     } else {
-      console.log('[Webhook] Tipo de evento não tratado:', { type, action });
+      console.log('[Webhook] Evento Mercado Pago ignorado:', { type, action, dataId: data.id });
     }
+
+    return res.status(200).json({ received: true });
   } catch (error) {
     console.error('[Webhook] Erro ao processar webhook do Mercado Pago:', error);
+    return res.status(500).json({ error: 'Webhook processing failed' });
   }
 }
 
-/**
- * Verifica assinatura HMAC do webhook do Mercado Pago.
- *
- * @param {Object} params
- * @param {string} params.signature  - Header x-signature
- * @param {string} params.requestId  - Header x-request-id
- * @param {string} params.dataId     - data.id do body
- * @param {string} params.secret     - MP_WEBHOOK_SECRET
- * @returns {boolean}
- */
+function isPaymentEvent(type, action) {
+  return type === 'payment' || (typeof action === 'string' && action.startsWith('payment.'));
+}
+
+function isPreapprovalEvent(type, action) {
+  return (
+    type === 'subscription_preapproval' ||
+    type === 'preapproval' ||
+    (typeof action === 'string' && (action.startsWith('subscription_preapproval.') || action.startsWith('preapproval.')))
+  );
+}
+
 function verifyWebhookSignature({ signature, requestId, dataId, secret }) {
   try {
-    const parts = signature.split(',').reduce((acc, part) => {
-      const [key, value] = part.trim().split('=');
-      acc[key] = value;
-      return acc;
-    }, {});
+    const parts = String(signature)
+      .split(',')
+      .reduce((acc, part) => {
+        const [key, value] = part.trim().split('=');
+        acc[key] = value;
+        return acc;
+      }, {});
 
     const ts = parts.ts;
     const hash = parts.v1;
-
     if (!ts || !hash) {
       return false;
     }
 
     const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
-    const expected = crypto
-      .createHmac('sha256', secret)
-      .update(manifest)
-      .digest('hex');
+    const expected = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
 
-    return crypto.timingSafeEqual(
-      Buffer.from(hash, 'hex'),
-      Buffer.from(expected, 'hex')
-    );
-  } catch (err) {
-    console.error('[Webhook] Erro na verificação de assinatura:', err.message);
+    return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(expected, 'hex'));
+  } catch (error) {
+    console.error('[Webhook] Erro na verificacao de assinatura:', error.message);
     return false;
   }
 }
 
-module.exports = { handleMercadoPagoWebhook };
+module.exports = { handleMercadoPagoWebhook, verifyWebhookSignature };

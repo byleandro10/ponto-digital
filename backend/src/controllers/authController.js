@@ -2,6 +2,7 @@ const prisma = require('../config/database');
 const bcrypt = require('bcryptjs');
 const { generateToken } = require('../utils/generateToken');
 const { isValidEmail, isValidCNPJ, formatCNPJ, isValidPassword, sanitize } = require('../utils/validators');
+const { TRIAL_DAYS, BILLING_STATUS, normalizePlanKey } = require('../config/billingConfig');
 
 // Rastreamento de login direto (sem middleware, pois login não tem req.companyId)
 async function _trackLoginDirect(companyId, type) {
@@ -21,7 +22,7 @@ async function _trackLoginDirect(companyId, type) {
 
 async function register(req, res) {
   try {
-    let { companyName, cnpj, name, email, password } = req.body;
+    let { companyName, cnpj, name, email, password, plan } = req.body;
 
     // Sanitização
     companyName = sanitize(companyName);
@@ -65,22 +66,31 @@ async function register(req, res) {
       return res.status(400).json({ error: 'Não foi possível completar o cadastro. Verifique os dados e tente novamente.' });
     }
     const hashedPassword = await bcrypt.hash(password, 12);
-    // Calcular trial de 30 dias
-    const trialEndsAt = new Date();
-    trialEndsAt.setDate(trialEndsAt.getDate() + 30);
+    plan = normalizePlanKey(plan, 'BASIC');
 
-    // Plano sempre inicia como basic — upgrade via billing
-    const plan = 'basic';
+    const trialEndsAt = new Date();
+    trialEndsAt.setDate(trialEndsAt.getDate() + TRIAL_DAYS);
+    const now = new Date();
 
     const company = await prisma.company.create({
       data: {
         name: companyName,
         cnpj,
-        plan,
-        subscriptionStatus: 'TRIAL',
+        plan: plan.toLowerCase(),
+        subscriptionStatus: BILLING_STATUS.TRIAL,
         trialEndsAt,
         users: {
           create: { name, email, password: hashedPassword, role: 'ADMIN' }
+        },
+        subscriptions: {
+          create: {
+            plan,
+            status: BILLING_STATUS.TRIAL,
+            trialStart: now,
+            trialEndsAt,
+            currentPeriodStart: now,
+            currentPeriodEnd: trialEndsAt,
+          },
         }
       },
       include: { users: true }
@@ -91,8 +101,8 @@ async function register(req, res) {
       message: 'Empresa cadastrada com sucesso!',
       token,
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
-      company: { id: company.id, name: company.name, plan: company.plan },
-      subscriptionStatus: 'TRIAL',
+      company: { id: company.id, name: company.name, cnpj: company.cnpj, plan: company.plan },
+      subscriptionStatus: BILLING_STATUS.TRIAL,
       trialEndsAt
     });
   } catch (error) {
@@ -125,8 +135,8 @@ async function loginAdmin(req, res) {
     res.json({
       token,
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
-      company: { id: user.company.id, name: user.company.name, plan: user.company.plan },
-      subscriptionStatus: user.company.subscriptionStatus || 'TRIAL',
+      company: { id: user.company.id, name: user.company.name, cnpj: user.company.cnpj, plan: user.company.plan },
+      subscriptionStatus: user.company.subscriptionStatus || BILLING_STATUS.TRIAL,
       trialEndsAt: user.company.trialEndsAt || null,
     });
   } catch (error) {
@@ -152,7 +162,9 @@ async function loginEmployee(req, res) {
     res.json({
       token,
       employee: { id: employee.id, name: employee.name, cpf: employee.cpf.replace(/^(\d{3})\d{6}(\d{2})$/, '$1.***.***-$2'), position: employee.position },
-      company: { id: employee.company.id, name: employee.company.name }
+      company: { id: employee.company.id, name: employee.company.name, cnpj: employee.company.cnpj, plan: employee.company.plan },
+      subscriptionStatus: employee.company.subscriptionStatus || BILLING_STATUS.TRIAL,
+      trialEndsAt: employee.company.trialEndsAt || null,
     });
   } catch (error) {
     console.error(error);

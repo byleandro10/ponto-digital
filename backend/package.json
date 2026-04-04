@@ -8,6 +8,7 @@
     "start": "node src/app.js",
     "db:migrate": "npx prisma db push",
     "db:seed": "node prisma/seed.js",
+    "billing:reconcile": "node scripts/reconcile-billing.js",
     "db:studio": "npx prisma studio",
     "migrate:data:mysql": "node scripts/migrate-postgres-to-mysql.js",
     "test": "jest --forceExit --detectOpenHandles",

@@ -75,7 +75,7 @@ function PlanCard({ plan, selected, onSelect }) {
 export default function Checkout() {
   const { plan: urlPlan } = useParams();
   const navigate = useNavigate();
-  const { register: authRegister } = useAuth();
+  useAuth();
 
   const [step, setStep] = useState(1);
   const [selectedPlan, setSelectedPlan] = useState(
@@ -159,6 +159,7 @@ export default function Checkout() {
     try {
       // 1. Tokenizar cartão via Mercado Pago JS SDK
       let cardTokenId = null;
+      let paymentMethodId = null;
       if (window.MercadoPago) {
         try {
           const mp = new window.MercadoPago(import.meta.env.VITE_MP_PUBLIC_KEY || 'TEST-0000-0000', { locale: 'pt-BR' });
@@ -173,7 +174,9 @@ export default function Checkout() {
             identificationNumber: cnpj.replace(/\D/g, ''),
           });
           cardTokenId = tokenResult.id;
+          paymentMethodId = tokenResult.payment_method_id || cardBrand;
         } catch (mpErr) {
+          throw new Error(mpErr.message || 'Falha ao tokenizar o cartao no Mercado Pago.');
           console.warn('Tokenização MP falhou (credenciais de teste?):', mpErr.message);
         }
       }
@@ -193,16 +196,21 @@ export default function Checkout() {
       localStorage.setItem('user', JSON.stringify({ ...userData, company, type: 'admin', subscriptionStatus: subscriptionStatus || 'TRIAL', trialEndsAt }));
 
       // 3. Criar assinatura com trial
+      if (!cardTokenId || !paymentMethodId) {
+        throw new Error('Nao foi possivel validar o cartao para iniciar o trial.');
+      }
       if (cardTokenId) {
         try {
           await api.post('/subscriptions/create-preapproval', {
             plan: selectedPlan,
             cardTokenId,
+            paymentMethodId,
             email,
           }, {
             headers: { Authorization: `Bearer ${token}` },
           });
         } catch (subErr) {
+          throw subErr;
           console.warn('Assinatura MP não criada (modo dev?):', subErr.message);
         }
       }
@@ -211,12 +219,12 @@ export default function Checkout() {
       // Force page reload to update auth context
       window.location.href = '/admin/dashboard';
     } catch (error) {
-      const msg = error.response?.data?.error || 'Erro ao criar conta. Tente novamente.';
+      const msg = error.response?.data?.error || error.message || 'Erro ao criar conta. Tente novamente.';
       toast.error(msg);
     } finally {
       setLoading(false);
     }
-  }, [companyName, cnpj, name, email, password, selectedPlan, cardNumber, cardHolder, cardExpiry, cardCvv]);
+  }, [companyName, cnpj, name, email, password, selectedPlan, cardNumber, cardHolder, cardExpiry, cardCvv, cardBrand]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">

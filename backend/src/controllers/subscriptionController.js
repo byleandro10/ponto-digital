@@ -10,18 +10,19 @@ const { BillingError, PLAN_PRICES, PLAN_NAMES } = billingService;
  * POST /api/subscriptions/create-preapproval
  * POST /api/billing/create-subscription
  *
- * Cria assinatura recorrente com trial de 14 dias.
+ * Cria assinatura recorrente alinhada ao trial de 30 dias da empresa.
  */
 async function createPreapproval(req, res) {
   try {
-    const { plan, cardTokenId, email } = req.body;
+    const { plan, cardTokenId, paymentMethodId } = req.body;
     const companyId = req.companyId;
 
     const subscription = await billingService.createSubscription({
       companyId,
+      userId: req.userId,
       plan,
       cardTokenId,
-      email,
+      paymentMethodId,
     });
 
     res.status(201).json({
@@ -56,12 +57,13 @@ async function getStatus(req, res) {
  */
 async function changePlan(req, res) {
   try {
-    const { plan, cardTokenId, email } = req.body;
+    const { plan, cardTokenId, paymentMethodId } = req.body;
     const result = await billingService.changePlan({
       companyId: req.companyId,
+      userId: req.userId,
       plan,
       cardTokenId,
-      email,
+      paymentMethodId,
     });
 
     res.json(result);
@@ -109,11 +111,12 @@ async function getPayments(req, res) {
  */
 async function reactivateSubscription(req, res) {
   try {
-    const { cardTokenId, email, plan } = req.body;
+    const { cardTokenId, paymentMethodId, plan } = req.body;
     const result = await billingService.reactivateSubscription({
       companyId: req.companyId,
+      userId: req.userId,
       cardTokenId,
-      email,
+      paymentMethodId,
       plan,
     });
 

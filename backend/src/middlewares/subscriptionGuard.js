@@ -1,6 +1,7 @@
 const prisma = require('../config/database');
 const { extractBearerToken, decodeToken, assignAuthContext } = require('./auth');
 const { logSecurityEvent } = require('../utils/securityLogger');
+const billingService = require('../services/billingService');
 
 async function subscriptionGuard(req, res, next) {
   try {
@@ -32,6 +33,8 @@ async function subscriptionGuard(req, res, next) {
       logSecurityEvent(req, 'missing_company_context');
       return res.status(401).json({ error: 'Empresa nao identificada.' });
     }
+
+    await billingService.reconcileCompanyBillingState(companyId);
 
     const company = await prisma.company.findUnique({
       where: { id: companyId },
