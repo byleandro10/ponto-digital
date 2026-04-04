@@ -20,6 +20,7 @@ const billingRoutes = require('./routes/billingRoutes');
 const webhookRoutes = require('./routes/webhookRoutes');
 const superAdminRoutes = require('./routes/superAdminRoutes');
 const { subscriptionGuard } = require('./middlewares/subscriptionGuard');
+const prisma = require('./config/database');
 
 const app = express();
 const frontendDistPath = path.resolve(__dirname, '..', '..', 'frontend', 'dist');
@@ -91,8 +92,24 @@ app.use('/api/export', subscriptionGuard, exportRoutes);
 app.use('/api/adjustment-requests', subscriptionGuard, adjustmentRequestRoutes);
 app.use('/api/employee', subscriptionGuard, employeeSelfServiceRoutes);
 
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+app.get('/api/health', async (req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({
+      status: 'OK',
+      database: 'OK',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('[health] database check failed:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      database: 'ERROR',
+      code: error.code || 'UNKNOWN',
+      message: error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
 });
 
 if (hasFrontendBuild) {
