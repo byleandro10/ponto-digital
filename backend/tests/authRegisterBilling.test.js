@@ -81,7 +81,7 @@ describe('authController register with billing', () => {
     await register(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Este CNPJ ja possui uma empresa cadastrada.' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'Este CNPJ já possui uma empresa cadastrada.' });
   });
 
   test('requires stripe payment method when signup includes a plan', async () => {
@@ -101,7 +101,7 @@ describe('authController register with billing', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({
-      error: 'Para iniciar o trial com cobranca automatica, valide o cartao pela Stripe antes de concluir o cadastro.',
+      error: 'Para iniciar o trial com cobrança automática, valide o cartão pela Stripe antes de concluir o cadastro.',
     });
   });
 

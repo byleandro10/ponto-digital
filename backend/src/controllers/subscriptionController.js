@@ -1,5 +1,6 @@
 const billingService = require('../services/billingService');
 const stripeService = require('../services/stripeService');
+const { stripePublishableKey } = require('../config/stripe');
 
 const { BillingError, PLAN_PRICES, PLAN_NAMES } = billingService;
 
@@ -19,8 +20,21 @@ async function createSetupIntent(req, res) {
     });
   } catch (error) {
     console.error('[Controller] Erro ao criar SetupIntent:', error);
-    return res.status(500).json({ error: 'Erro ao iniciar validacao do cartao com a Stripe.' });
+    return res.status(500).json({ error: 'Erro ao iniciar a validação do cartão com a Stripe.' });
   }
+}
+
+async function getPublicBillingConfig(req, res) {
+  if (!stripePublishableKey) {
+    return res.status(503).json({
+      error: 'A chave pública da Stripe não está configurada no ambiente de produção.',
+    });
+  }
+
+  return res.json({
+    provider: 'stripe',
+    publishableKey: stripePublishableKey,
+  });
 }
 
 async function createPreapproval(req, res) {
@@ -36,7 +50,7 @@ async function createPreapproval(req, res) {
     });
 
     res.status(201).json({
-      message: `Assinatura criada com sucesso! ${billingService.TRIAL_DAYS} dias gratis ativados.`,
+      message: `Assinatura criada com sucesso! ${billingService.TRIAL_DAYS} dias grátis ativados.`,
       subscription,
     });
   } catch (error) {
@@ -117,11 +131,12 @@ async function reactivateSubscription(req, res) {
       return res.status(error.statusCode).json({ error: error.message });
     }
     console.error('[Controller] Erro ao reativar assinatura:', error);
-    res.status(500).json({ error: 'Erro ao reativar assinatura. Verifique os dados do cartao e tente novamente.' });
+    res.status(500).json({ error: 'Erro ao reativar a assinatura. Verifique os dados do cartão e tente novamente.' });
   }
 }
 
 module.exports = {
+  getPublicBillingConfig,
   createSetupIntent,
   createPreapproval,
   getStatus,

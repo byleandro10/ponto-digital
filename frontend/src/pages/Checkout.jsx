@@ -10,23 +10,23 @@ const PLANS = {
     key: 'BASIC',
     name: 'Basico',
     price: 49,
-    employees: 'Ate 15 funcionarios',
-    features: ['Ponto digital com GPS', 'Dashboard em tempo real', 'Relatorio mensal', 'Suporte por e-mail', 'PWA (funciona offline)'],
+    employees: 'Até 15 funcionários',
+    features: ['Ponto digital com GPS', 'Dashboard em tempo real', 'Relatório mensal', 'Suporte por e-mail', 'PWA (funciona offline)'],
   },
   professional: {
     key: 'PROFESSIONAL',
     name: 'Profissional',
     price: 99,
-    employees: 'Ate 50 funcionarios',
-    features: ['Tudo do Basico', 'Selfie anti-fraude', 'Cerca virtual', 'Exportacao PDF/Excel/CSV', 'Banco de horas', 'Suporte prioritario'],
+    employees: 'Até 50 funcionários',
+    features: ['Tudo do Básico', 'Selfie antifraude', 'Cerca virtual', 'Exportação PDF/Excel/CSV', 'Banco de horas', 'Suporte prioritário'],
     popular: true,
   },
   enterprise: {
     key: 'ENTERPRISE',
     name: 'Empresarial',
     price: 199,
-    employees: 'Funcionarios ilimitados',
-    features: ['Tudo do Profissional', 'API de integracao', 'Multi-filiais', 'Relatorios avancados', 'Gerente de conta dedicado', 'SLA 99.9%'],
+    employees: 'Funcionários ilimitados',
+    features: ['Tudo do Profissional', 'API de integração', 'Multiunidades', 'Relatórios avançados', 'Gerente de conta dedicado', 'SLA 99,9%'],
   },
 };
 
@@ -77,6 +77,8 @@ export default function Checkout() {
   const [password, setPassword] = useState('');
   const [cardHolder, setCardHolder] = useState('');
   const [stripeReady, setStripeReady] = useState(false);
+  const [stripeLoading, setStripeLoading] = useState(false);
+  const [stripeLoadError, setStripeLoadError] = useState('');
   const [cardError, setCardError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -98,36 +100,52 @@ export default function Checkout() {
     let cancelled = false;
 
     (async () => {
-      const stripe = await getStripe();
-      if (!stripe || cancelled || !cardElementContainerRef.current) {
-        return;
-      }
+      setStripeLoading(true);
+      setStripeLoadError('');
 
-      stripeRef.current = stripe;
-      elementsRef.current = stripe.elements();
-      const cardElement = elementsRef.current.create('card', {
-        hidePostalCode: true,
-        style: {
-          base: {
-            fontSize: '16px',
-            color: '#111827',
-            '::placeholder': { color: '#9ca3af' },
+      try {
+        const stripe = await getStripe();
+        if (!stripe || cancelled || !cardElementContainerRef.current) {
+          return;
+        }
+
+        stripeRef.current = stripe;
+        elementsRef.current = stripe.elements();
+        const cardElement = elementsRef.current.create('card', {
+          hidePostalCode: true,
+          style: {
+            base: {
+              fontSize: '16px',
+              color: '#111827',
+              fontFamily: 'Inter, system-ui, sans-serif',
+              '::placeholder': { color: '#9ca3af' },
+            },
+            invalid: {
+              color: '#dc2626',
+            },
           },
-        },
-      });
+        });
 
-      cardElement.mount(cardElementContainerRef.current);
-      cardElement.on('change', (event) => {
-        setCardError(event.error?.message || '');
-      });
-      cardElementRef.current = cardElement;
-      setStripeReady(true);
+        cardElement.mount(cardElementContainerRef.current);
+        cardElement.on('change', (event) => {
+          setCardError(event.error?.message || '');
+        });
+        cardElementRef.current = cardElement;
+        setStripeReady(true);
+      } catch (error) {
+        setStripeLoadError(error.message || 'Não foi possível carregar o formulário seguro da Stripe.');
+      } finally {
+        if (!cancelled) {
+          setStripeLoading(false);
+        }
+      }
     })();
 
     return () => {
       cancelled = true;
       setStripeReady(false);
       setCardError('');
+      setStripeLoadError('');
       if (cardElementRef.current) {
         cardElementRef.current.unmount();
         cardElementRef.current = null;
@@ -137,20 +155,21 @@ export default function Checkout() {
   }, [step]);
 
   const validateStep2 = () => {
-    if (!companyName || companyName.length < 3) { toast.error('Nome da empresa deve ter pelo menos 3 caracteres.'); return false; }
-    if (!cnpj || cnpj.replace(/\D/g, '').length !== 14) { toast.error('CNPJ deve ter 14 digitos.'); return false; }
-    if (!name || name.length < 3) { toast.error('Nome deve ter pelo menos 3 caracteres.'); return false; }
-    if (!email || !email.includes('@')) { toast.error('E-mail invalido.'); return false; }
+    if (!companyName || companyName.length < 3) { toast.error('O nome da empresa deve ter pelo menos 3 caracteres.'); return false; }
+    if (!cnpj || cnpj.replace(/\D/g, '').length !== 14) { toast.error('O CNPJ deve ter 14 dígitos.'); return false; }
+    if (!name || name.length < 3) { toast.error('O nome deve ter pelo menos 3 caracteres.'); return false; }
+    if (!email || !email.includes('@')) { toast.error('Informe um e-mail válido.'); return false; }
     if (!password || password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
-      toast.error('Senha deve ter pelo menos 8 caracteres, com 1 maiuscula, 1 minuscula e 1 numero.');
+      toast.error('A senha deve ter pelo menos 8 caracteres, com 1 letra maiúscula, 1 letra minúscula e 1 número.');
       return false;
     }
     return true;
   };
 
   const validateStep3 = () => {
-    if (!cardHolder || cardHolder.length < 3) { toast.error('Nome do titular obrigatorio.'); return false; }
-    if (!stripeReady || !cardElementRef.current) { toast.error('Formulario de cartao da Stripe ainda nao carregou.'); return false; }
+    if (!cardHolder || cardHolder.length < 3) { toast.error('O nome do titular é obrigatório.'); return false; }
+    if (stripeLoadError) { toast.error(stripeLoadError); return false; }
+    if (!stripeReady || !cardElementRef.current) { toast.error('O formulário do cartão ainda está carregando.'); return false; }
     if (cardError) { toast.error(cardError); return false; }
     return true;
   };
@@ -165,7 +184,7 @@ export default function Checkout() {
       const stripe = stripeRef.current;
 
       if (!stripe || !cardElementRef.current || !clientSecret) {
-        throw new Error('Nao foi possivel iniciar a validacao do cartao na Stripe.');
+        throw new Error('Não foi possível iniciar a validação do cartão na Stripe.');
       }
 
       const { setupIntent, error } = await stripe.confirmCardSetup(clientSecret, {
@@ -179,11 +198,11 @@ export default function Checkout() {
       });
 
       if (error) {
-        throw new Error(error.message || 'Falha ao validar o cartao na Stripe.');
+        throw new Error(error.message || 'Falha ao validar o cartão na Stripe.');
       }
 
       if (!setupIntent?.payment_method) {
-        throw new Error('A Stripe nao retornou um metodo de pagamento valido.');
+        throw new Error('A Stripe não retornou um método de pagamento válido.');
       }
 
       const registerRes = await api.post('/auth/register', {
@@ -200,7 +219,7 @@ export default function Checkout() {
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify({ ...userData, company, type: 'admin', subscriptionStatus, trialEndsAt }));
 
-      toast.success('Bem-vindo! Trial iniciado com cartao validado na Stripe.');
+      toast.success('Bem-vindo! Trial iniciado com cartão validado na Stripe.');
       window.location.href = '/admin/dashboard';
     } catch (error) {
       toast.error(error.response?.data?.error || error.message || 'Erro ao criar conta.');
@@ -240,7 +259,7 @@ export default function Checkout() {
         {step === 1 && (
           <div>
             <h2 className="text-2xl font-bold text-gray-900 text-center mb-2">Escolha seu plano</h2>
-            <p className="text-gray-500 text-center mb-8">30 dias gratis em todos os planos. Cancele quando quiser.</p>
+            <p className="text-gray-500 text-center mb-8">30 dias grátis em todos os planos. Cancele quando quiser.</p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {Object.values(PLANS).map((plan) => (
                 <PlanCard key={plan.key} plan={plan} selected={selectedPlan} onSelect={setSelectedPlan} />
@@ -257,7 +276,7 @@ export default function Checkout() {
         {step === 2 && (
           <div className="max-w-lg mx-auto">
             <h2 className="text-2xl font-bold text-gray-900 text-center mb-2">Dados da empresa</h2>
-            <p className="text-gray-500 text-center mb-8">Informacoes para criar sua conta</p>
+            <p className="text-gray-500 text-center mb-8">Informações para criar sua conta</p>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nome da empresa</label>
@@ -277,7 +296,7 @@ export default function Checkout() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Minimo 8 caracteres, com maiuscula, minuscula e numero" className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo de 8 caracteres, com maiúscula, minúscula e número" className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
               </div>
             </div>
             <div className="flex justify-between mt-8">
@@ -293,8 +312,8 @@ export default function Checkout() {
 
         {step === 3 && (
           <div className="max-w-lg mx-auto">
-            <h2 className="text-2xl font-bold text-gray-900 text-center mb-2">Cartao de credito</h2>
-            <p className="text-gray-500 text-center mb-2">O cartao e validado pela Stripe e a primeira cobranca sera em 30 dias.</p>
+            <h2 className="text-2xl font-bold text-gray-900 text-center mb-2">Cartão de crédito</h2>
+            <p className="text-gray-500 text-center mb-2">O cartão é validado pela Stripe agora, e a primeira cobrança acontece em 30 dias.</p>
             <div className="flex items-center justify-center gap-2 mb-8">
               <FiLock className="w-4 h-4 text-green-600" />
               <span className="text-sm text-green-600 font-medium">Pagamento seguro via Stripe</span>
@@ -302,13 +321,15 @@ export default function Checkout() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nome do titular</label>
-                <input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="Nome como no cartao" className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
+                <input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="Nome como aparece no cartão" className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Dados do cartao</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Dados do cartão</label>
                 <div className="w-full border border-gray-300 rounded-xl px-4 py-4 bg-white">
-                  <div ref={cardElementContainerRef} />
+                  {stripeLoading && <p className="text-sm text-gray-500">Carregando formulário seguro da Stripe...</p>}
+                  <div ref={cardElementContainerRef} className={stripeLoading ? 'opacity-0 h-0 overflow-hidden' : ''} />
                 </div>
+                {stripeLoadError && <p className="text-sm text-red-600 mt-2">{stripeLoadError}</p>}
                 {cardError && <p className="text-sm text-red-600 mt-2">{cardError}</p>}
               </div>
             </div>
@@ -344,9 +365,9 @@ export default function Checkout() {
                 <div className="flex items-start gap-3">
                   <FiShield className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
                   <div>
-                    <p className="font-semibold text-green-800 text-sm">30 dias gratis</p>
+                    <p className="font-semibold text-green-800 text-sm">30 dias grátis</p>
                     <p className="text-green-700 text-xs mt-1">
-                      A Stripe vai validar o cartao agora. A primeira cobranca de R${selectedPlanData?.price} sera em <strong>{firstChargeDate.toLocaleDateString('pt-BR')}</strong>.
+                      A Stripe vai validar o cartão agora. A primeira cobrança de R${selectedPlanData?.price} será em <strong>{firstChargeDate.toLocaleDateString('pt-BR')}</strong>.
                     </p>
                   </div>
                 </div>
@@ -357,7 +378,7 @@ export default function Checkout() {
                 <FiArrowLeft /> Voltar
               </button>
               <button disabled={loading || !stripeReady} onClick={handleSubmit} className="inline-flex items-center gap-2 bg-blue-600 text-white font-semibold px-8 py-3 rounded-xl hover:bg-blue-700 transition disabled:opacity-50">
-                {loading ? 'Processando...' : <><FiCreditCard /> Ativar 30 dias gratis</>}
+                {loading ? 'Processando...' : <><FiCreditCard /> Ativar 30 dias grátis</>}
               </button>
             </div>
           </div>

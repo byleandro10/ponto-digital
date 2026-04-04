@@ -7,6 +7,7 @@ const { roleGuard } = require('../middlewares/roleGuard');
 const { allowBodyFields, allowQueryFields } = require('../middlewares/requestGuard');
 const { logSecurityEvent } = require('../utils/securityLogger');
 const {
+  getPublicBillingConfig,
   createSetupIntent,
   createPreapproval,
   getStatus,
@@ -24,6 +25,7 @@ const billingLimiter = rateLimit({
   },
 });
 
+router.get('/public-config', billingLimiter, allowQueryFields([]), getPublicBillingConfig);
 router.post('/setup-intent', billingLimiter, allowBodyFields(['email']), createSetupIntent);
 
 router.use(authMiddleware);

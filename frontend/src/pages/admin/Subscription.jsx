@@ -10,9 +10,9 @@ import { getStripe } from '../../utils/stripe';
 const PLAN_NAMES = { BASIC: 'Basico', PROFESSIONAL: 'Profissional', ENTERPRISE: 'Empresarial' };
 const PLAN_PRICES = { BASIC: 49, PROFESSIONAL: 99, ENTERPRISE: 199 };
 const PLANS = [
-  { key: 'BASIC', name: 'Basico', price: 49, features: ['Ate 15 funcionarios', 'Registro de ponto', 'Relatorios basicos'] },
-  { key: 'PROFESSIONAL', name: 'Profissional', price: 99, features: ['Ate 50 funcionarios', 'Cerca virtual', 'Relatorios avancados', 'Banco de horas'] },
-  { key: 'ENTERPRISE', name: 'Empresarial', price: 199, features: ['Funcionarios ilimitados', 'Todas as funcionalidades', 'Suporte prioritario'] },
+  { key: 'BASIC', name: 'Básico', price: 49, features: ['Até 15 funcionários', 'Registro de ponto', 'Relatórios básicos'] },
+  { key: 'PROFESSIONAL', name: 'Profissional', price: 99, features: ['Até 50 funcionários', 'Cerca virtual', 'Relatórios avançados', 'Banco de horas'] },
+  { key: 'ENTERPRISE', name: 'Empresarial', price: 199, features: ['Funcionários ilimitados', 'Todas as funcionalidades', 'Suporte prioritário'] },
 ];
 
 export default function Subscription() {
@@ -26,6 +26,8 @@ export default function Subscription() {
   const [selectedPlan, setSelectedPlan] = useState('BASIC');
   const [cardHolder, setCardHolder] = useState('');
   const [stripeReady, setStripeReady] = useState(false);
+  const [stripeLoading, setStripeLoading] = useState(false);
+  const [stripeLoadError, setStripeLoadError] = useState('');
   const [cardError, setCardError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -65,30 +67,46 @@ export default function Subscription() {
 
     let cancelled = false;
     (async () => {
-      const stripe = await getStripe();
-      if (!stripe || cancelled || !cardContainerRef.current) return;
+      setStripeLoading(true);
+      setStripeLoadError('');
 
-      stripeRef.current = stripe;
-      elementsRef.current = stripe.elements();
-      const card = elementsRef.current.create('card', {
-        hidePostalCode: true,
-        style: {
-          base: {
-            fontSize: '16px',
-            color: '#111827',
-            '::placeholder': { color: '#9ca3af' },
+      try {
+        const stripe = await getStripe();
+        if (!stripe || cancelled || !cardContainerRef.current) return;
+
+        stripeRef.current = stripe;
+        elementsRef.current = stripe.elements();
+        const card = elementsRef.current.create('card', {
+          hidePostalCode: true,
+          style: {
+            base: {
+              fontSize: '16px',
+              color: '#111827',
+              fontFamily: 'Inter, system-ui, sans-serif',
+              '::placeholder': { color: '#9ca3af' },
+            },
+            invalid: {
+              color: '#dc2626',
+            },
           },
-        },
-      });
-      card.mount(cardContainerRef.current);
-      card.on('change', (event) => setCardError(event.error?.message || ''));
-      cardElementRef.current = card;
-      setStripeReady(true);
+        });
+        card.mount(cardContainerRef.current);
+        card.on('change', (event) => setCardError(event.error?.message || ''));
+        cardElementRef.current = card;
+        setStripeReady(true);
+      } catch (error) {
+        setStripeLoadError(error.message || 'Não foi possível carregar o formulário seguro da Stripe.');
+      } finally {
+        if (!cancelled) {
+          setStripeLoading(false);
+        }
+      }
     })();
 
     return () => {
       cancelled = true;
       setStripeReady(false);
+      setStripeLoadError('');
       if (cardElementRef.current) {
         cardElementRef.current.unmount();
         cardElementRef.current = null;
@@ -103,8 +121,9 @@ export default function Subscription() {
 
   const handleSubmit = useCallback(async () => {
     if (!selectedPlan) { toast.error('Selecione um plano.'); return; }
-    if (!cardHolder || cardHolder.length < 3) { toast.error('Nome do titular obrigatorio.'); return; }
-    if (!stripeReady || !cardElementRef.current) { toast.error('Formulario de cartao ainda nao carregou.'); return; }
+    if (!cardHolder || cardHolder.length < 3) { toast.error('O nome do titular é obrigatório.'); return; }
+    if (stripeLoadError) { toast.error(stripeLoadError); return; }
+    if (!stripeReady || !cardElementRef.current) { toast.error('O formulário do cartão ainda está carregando.'); return; }
     if (cardError) { toast.error(cardError); return; }
 
     setSubmitting(true);
@@ -122,7 +141,7 @@ export default function Subscription() {
       });
 
       if (error) {
-        throw new Error(error.message || 'Falha ao validar o cartao na Stripe.');
+        throw new Error(error.message || 'Falha ao validar o cartão na Stripe.');
       }
 
       const endpoint = needsReactivation ? '/subscriptions/reactivate' : '/subscriptions/change-plan';
@@ -143,7 +162,7 @@ export default function Subscription() {
     } finally {
       setSubmitting(false);
     }
-  }, [selectedPlan, cardHolder, stripeReady, cardError, user, needsReactivation, updateSubscriptionStatus, navigate]);
+  }, [selectedPlan, cardHolder, stripeReady, stripeLoadError, cardError, user, needsReactivation, updateSubscriptionStatus, navigate]);
 
   const handleCancel = async () => {
     if (!window.confirm('Tem certeza que deseja cancelar sua assinatura?')) return;
@@ -183,7 +202,7 @@ export default function Subscription() {
               <FiAlertTriangle className="w-6 h-6 text-red-500 mt-0.5 shrink-0" />
               <div>
                 <h3 className="text-lg font-bold text-red-800">Assinatura inativa</h3>
-                <p className="text-sm text-red-600 mt-1">Cadastre um cartao na Stripe para reativar o acesso ao sistema.</p>
+                <p className="text-sm text-red-600 mt-1">Cadastre um cartão na Stripe para reativar o acesso ao sistema.</p>
               </div>
             </div>
           </div>
@@ -201,10 +220,10 @@ export default function Subscription() {
               <div className="bg-gray-50 rounded-xl p-4">
                 <p className="text-sm text-gray-500">Plano</p>
                 <p className="text-xl font-bold text-gray-900">{PLAN_NAMES[subscription.plan] || subscription.plan}</p>
-                <p className="text-sm text-gray-500 mt-1">R${PLAN_PRICES[subscription.plan] || 0}/mes</p>
+                <p className="text-sm text-gray-500 mt-1">R${PLAN_PRICES[subscription.plan] || 0}/mês</p>
               </div>
               <div className="bg-gray-50 rounded-xl p-4">
-                <p className="text-sm text-gray-500">Periodo atual</p>
+                <p className="text-sm text-gray-500">Período atual</p>
                 <p className="text-sm font-bold text-gray-900">{subscription.currentPeriodEnd ? new Date(subscription.currentPeriodEnd).toLocaleDateString('pt-BR') : '-'}</p>
               </div>
               <div className="bg-gray-50 rounded-xl p-4">
@@ -214,7 +233,7 @@ export default function Subscription() {
             </div>
             <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100">
               <button onClick={() => setShowCardForm(true)} className="text-sm text-blue-600 hover:text-blue-800 transition font-medium">
-                Alterar cartao / plano
+                Alterar cartão / plano
               </button>
               <button onClick={handleCancel} disabled={cancelling} className="text-sm text-red-500 hover:text-red-700 transition disabled:opacity-50">
                 {cancelling ? 'Cancelando...' : 'Cancelar assinatura'}
@@ -227,9 +246,9 @@ export default function Subscription() {
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <h2 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2">
               <FiCreditCard className="text-blue-600" />
-              {needsReactivation ? 'Ativar Assinatura' : 'Atualizar Cartao / Plano'}
+              {needsReactivation ? 'Ativar assinatura' : 'Atualizar cartão / plano'}
             </h2>
-            <p className="text-sm text-gray-500 mb-6">Os dados do cartao sao coletados pela Stripe.</p>
+            <p className="text-sm text-gray-500 mb-6">Os dados do cartão são coletados pela Stripe.</p>
 
             <div className="mb-6">
               <label className="block text-sm font-semibold text-gray-700 mb-3">Selecione o plano</label>
@@ -265,13 +284,15 @@ export default function Subscription() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nome do titular</label>
-                <input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="Nome como no cartao" className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
+                <input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="Nome como aparece no cartão" className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Dados do cartao</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Dados do cartão</label>
                 <div className="w-full px-4 py-4 rounded-lg border border-gray-300">
-                  <div ref={cardContainerRef} />
+                  {stripeLoading && <p className="text-sm text-gray-500">Carregando formulário seguro da Stripe...</p>}
+                  <div ref={cardContainerRef} className={stripeLoading ? 'opacity-0 h-0 overflow-hidden' : ''} />
                 </div>
+                {stripeLoadError && <p className="text-sm text-red-600 mt-2">{stripeLoadError}</p>}
                 {cardError && <p className="text-sm text-red-600 mt-2">{cardError}</p>}
               </div>
               <div className="flex items-center gap-4 text-xs text-gray-400 pt-2">
@@ -281,7 +302,7 @@ export default function Subscription() {
               </div>
               <div className="flex gap-3 pt-2">
                 <button onClick={handleSubmit} disabled={submitting || !stripeReady} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition disabled:opacity-50 flex items-center justify-center gap-2">
-                  {submitting ? 'Processando...' : needsReactivation ? 'Ativar Assinatura' : 'Atualizar Cartao / Plano'}
+                  {submitting ? 'Processando...' : needsReactivation ? 'Ativar assinatura' : 'Atualizar cartão / plano'}
                 </button>
                 {!needsReactivation && (
                   <button onClick={() => setShowCardForm(false)} className="px-6 py-3 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50 transition font-medium">

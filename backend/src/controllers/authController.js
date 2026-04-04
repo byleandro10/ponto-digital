@@ -49,41 +49,41 @@ async function register(req, res) {
     paymentMethodId = sanitize(paymentMethodId);
 
     if (!companyName || !cnpj || !name || !email || !password) {
-      return res.status(400).json({ error: 'Todos os campos sao obrigatorios.' });
+      return res.status(400).json({ error: 'Todos os campos são obrigatórios.' });
     }
 
     if (!isValidEmail(email)) {
-      return res.status(400).json({ error: 'E-mail invalido. Informe um e-mail valido (ex: usuario@empresa.com).' });
+      return res.status(400).json({ error: 'E-mail inválido. Informe um e-mail válido (ex.: usuario@empresa.com).' });
     }
 
     if (!isValidCNPJ(cnpj)) {
-      return res.status(400).json({ error: 'CNPJ invalido. Informe um CNPJ valido com 14 digitos.' });
+      return res.status(400).json({ error: 'CNPJ inválido. Informe um CNPJ válido com 14 dígitos.' });
     }
     cnpj = formatCNPJ(cnpj);
 
     if (!isValidPassword(password)) {
-      return res.status(400).json({ error: 'Senha deve ter no minimo 8 caracteres, com pelo menos 1 maiuscula, 1 minuscula e 1 numero.' });
+      return res.status(400).json({ error: 'A senha deve ter no mínimo 8 caracteres, com pelo menos 1 letra maiúscula, 1 letra minúscula e 1 número.' });
     }
 
     if (name.length < 3) {
-      return res.status(400).json({ error: 'Nome deve ter no minimo 3 caracteres.' });
+      return res.status(400).json({ error: 'O nome deve ter no mínimo 3 caracteres.' });
     }
 
     const requiresBillingOnSignup = Boolean(plan || paymentMethodId);
     if (requiresBillingOnSignup && !paymentMethodId) {
       return res.status(400).json({
-        error: 'Para iniciar o trial com cobranca automatica, valide o cartao pela Stripe antes de concluir o cadastro.',
+        error: 'Para iniciar o trial com cobrança automática, valide o cartão pela Stripe antes de concluir o cadastro.',
       });
     }
 
     const existingCompany = await prisma.company.findUnique({ where: { cnpj } });
     if (existingCompany) {
-      return res.status(400).json({ error: 'Este CNPJ ja possui uma empresa cadastrada.' });
+      return res.status(400).json({ error: 'Este CNPJ já possui uma empresa cadastrada.' });
     }
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      return res.status(400).json({ error: 'Este e-mail ja esta em uso.' });
+      return res.status(400).json({ error: 'Este e-mail já está em uso.' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
@@ -136,7 +136,7 @@ async function register(req, res) {
         }
 
         return res.status(422).json({
-          error: `Falha ao validar o cartao e criar a assinatura no Mercado Pago: ${error.message}`,
+          error: `Falha ao validar o cartão e criar a assinatura na Stripe: ${error.message}`,
         });
       }
     }
@@ -164,7 +164,7 @@ async function register(req, res) {
       const field = error.meta?.target?.includes('email') ? 'E-mail' : 'CNPJ';
       return res.status(400).json({ error: `${field} ja cadastrado.` });
     }
-    res.status(500).json({ error: 'Erro ao registrar empresa. Tente novamente.' });
+    res.status(500).json({ error: 'Erro ao registrar a empresa. Tente novamente.' });
   }
 }
 
