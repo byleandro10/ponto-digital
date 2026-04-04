@@ -124,17 +124,11 @@ export default function Checkout() {
     setCardComplete(false);
 
     try {
-      const [{ data }, stripe] = await Promise.all([
-        api.post('/billing/setup-intent', { email }),
-        getStripe(),
-      ]);
-
-      if (!stripe || !data?.clientSecret) {
+      const stripe = await getStripe();
+      if (!stripe) {
         throw new Error('Nao foi possivel iniciar o formulario seguro da Stripe.');
       }
-
       stripeRef.current = stripe;
-      setupIntentIdRef.current = data.setupIntentId;
 
       if (cardElementRef.current) {
         cardElementRef.current.unmount();
@@ -215,7 +209,15 @@ export default function Checkout() {
         throw new Error('Nao foi possivel inicializar o pagamento seguro.');
       }
 
-      const { setupIntent, error } = await stripe.confirmCardSetup(setupIntentIdRef.current, {
+      const setupIntentRes = await api.post('/billing/setup-intent', { email });
+      const clientSecret = setupIntentRes.data?.clientSecret;
+      setupIntentIdRef.current = setupIntentRes.data?.setupIntentId || null;
+
+      if (!clientSecret) {
+        throw new Error('Nao foi possivel iniciar a validacao do cartao com a Stripe.');
+      }
+
+      const { setupIntent, error } = await stripe.confirmCardSetup(clientSecret, {
         payment_method: {
           card: cardElementRef.current,
           billing_details: {

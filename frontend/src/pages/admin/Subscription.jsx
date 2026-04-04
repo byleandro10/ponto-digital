@@ -94,17 +94,12 @@ export default function Subscription() {
     setCardComplete(false);
 
     try {
-      const [{ data }, stripe] = await Promise.all([
-        api.post('/billing/setup-intent', { email: user?.email || '' }),
-        getStripe(),
-      ]);
-
-      if (!stripe || !data?.clientSecret) {
+      const stripe = await getStripe();
+      if (!stripe) {
         throw new Error('Nao foi possivel carregar o formulario seguro da Stripe.');
       }
 
       stripeRef.current = stripe;
-      setupIntentIdRef.current = data.setupIntentId;
 
       if (cardElementRef.current) {
         cardElementRef.current.unmount();
@@ -165,8 +160,15 @@ export default function Subscription() {
     setSubmitting(true);
     try {
       const stripe = stripeRef.current;
+      const setupIntentRes = await api.post('/billing/setup-intent', { email: user?.email || '' });
+      const clientSecret = setupIntentRes.data?.clientSecret;
+      setupIntentIdRef.current = setupIntentRes.data?.setupIntentId || null;
 
-      const { setupIntent, error } = await stripe.confirmCardSetup(setupIntentIdRef.current, {
+      if (!clientSecret) {
+        throw new Error('Nao foi possivel iniciar a validacao do cartao com a Stripe.');
+      }
+
+      const { setupIntent, error } = await stripe.confirmCardSetup(clientSecret, {
         payment_method: {
           card: cardElementRef.current,
           billing_details: {
