@@ -34,6 +34,7 @@ O `npm run build` faz:
 1. instalar dependencias do `frontend`, incluindo `devDependencies` como `vite`
 2. gerar o Prisma Client
 3. gerar `frontend/dist`
+4. copiar o build final para `dist` na raiz, para provedores que fixam `Diretorio raiz = ./`
 
 ## Variaveis de ambiente
 
@@ -86,6 +87,13 @@ Notas:
 Se aparecer o erro `vite: command not found`, isso normalmente significa que o ambiente instalou o `frontend` sem as dependencias de build. Neste projeto, o script `npm run build` ja corrige isso executando:
 
 - `npm --prefix frontend install --include=dev`
+
+Se o painel da Hostinger travar `Diretorio raiz` em `./`, mantenha:
+
+- `Comando de construcao`: `npm run build`
+- `Diretorio de saida`: `dist`
+
+Porque este repositório agora copia automaticamente `frontend/dist` para `./dist` no fim da compilacao.
 
 ## GitHub e deploy automatico
 
