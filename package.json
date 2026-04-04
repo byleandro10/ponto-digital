@@ -10,12 +10,15 @@
     "dev": "echo Use 'npm run dev:backend' e 'npm run dev:frontend' em terminais separados",
     "dev:backend": "cd backend && node src/app.js",
     "dev:frontend": "cd frontend && npx vite --port 3000 --host",
-    "build": "cd frontend && npm install && npm run build",
+    "install:frontend": "npm --prefix frontend install",
+    "build:frontend": "npm --prefix frontend run build",
+    "prisma:generate": "npx prisma generate --schema=backend/prisma/schema.prisma",
+    "build": "npm run install:frontend && npm run prisma:generate && npm run build:frontend",
+    "start": "node backend/src/app.js",
     "postinstall": "npx prisma generate --schema=backend/prisma/schema.prisma",
     "db:push": "npx prisma db push --schema=backend/prisma/schema.prisma",
     "db:studio": "npx prisma studio --schema=backend/prisma/schema.prisma",
-    "test": "cd backend && npm test",
-    "vercel-build": "cd frontend && npm install && npm run build"
+    "test": "cd backend && npm test"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import api from '../../services/api';
+import api, { buildApiUrl } from '../../services/api';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 import { FiDownload, FiFileText, FiSearch, FiUsers } from 'react-icons/fi';
@@ -31,7 +31,7 @@ export default function Reports() {
   function downloadFile(format) {
     if (!selectedEmployee) return;
     const token = localStorage.getItem('token');
-    const url = `/api/export/${format}/${selectedEmployee}?month=${month}&year=${year}`;
+    const url = buildApiUrl(`/export/${format}/${selectedEmployee}?month=${month}&year=${year}`);
     
     fetch(url, { headers: { Authorization: `Bearer ${token}` } })
       .then(res => {
@@ -52,7 +52,7 @@ export default function Reports() {
 
   function downloadConsolidated() {
     const token = localStorage.getItem('token');
-    fetch(`/api/export/consolidated?month=${month}&year=${year}`, {
+    fetch(buildApiUrl(`/export/consolidated?month=${month}&year=${year}`), {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => { if (!res.ok) throw new Error(); return res.blob(); })

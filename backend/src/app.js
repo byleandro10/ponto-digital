@@ -1,9 +1,10 @@
+const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env') });
 
 const authRoutes = require('./routes/authRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
@@ -21,6 +22,9 @@ const superAdminRoutes = require('./routes/superAdminRoutes');
 const { subscriptionGuard } = require('./middlewares/subscriptionGuard');
 
 const app = express();
+const frontendDistPath = path.resolve(__dirname, '..', '..', 'frontend', 'dist');
+const frontendIndexPath = path.join(frontendDistPath, 'index.html');
+const hasFrontendBuild = fs.existsSync(frontendIndexPath);
 
 // Validar JWT_SECRET no startup
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
@@ -91,7 +95,19 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+if (hasFrontendBuild) {
+  app.use(express.static(frontendDistPath));
 
+  app.get(/^\/(?!api(?:\/|$)).*/, (req, res) => {
+    res.sendFile(frontendIndexPath);
+  });
+} else if (process.env.NODE_ENV === 'production') {
+  console.warn(`[startup] Frontend build não encontrado em ${frontendDistPath}. Execute o build do frontend antes de iniciar o servidor.`);
+}
+
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'Rota da API não encontrada.' });
+});
 
 app.use((err, req, res, next) => {
   console.error(err.stack);

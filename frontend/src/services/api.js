@@ -1,6 +1,13 @@
 import axios from 'axios';
 
-const api = axios.create({ baseURL: '/api', timeout: 10000 });
+const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '');
+
+export function buildApiUrl(path = '') {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${configuredApiBaseUrl}${normalizedPath}`;
+}
+
+const api = axios.create({ baseURL: configuredApiBaseUrl, timeout: 10000 });
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
