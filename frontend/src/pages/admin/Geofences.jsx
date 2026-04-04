@@ -6,6 +6,7 @@ import api from '../../services/api';
 import toast from 'react-hot-toast';
 import { FiMapPin, FiPlus, FiEdit2, FiTrash2, FiX, FiMap, FiCrosshair } from 'react-icons/fi';
 import AdminLayout from '../../components/AdminLayout';
+import { MAP_TILE_ATTRIBUTION, MAP_TILE_MAX_ZOOM, MAP_TILE_SUBDOMAINS, MAP_TILE_URL } from '../../utils/mapTiles';
 
 // Fix Leaflet default icons no Vite
 delete L.Icon.Default.prototype._getIconUrl;
@@ -174,8 +175,10 @@ export default function Geofences() {
           </div>
           <MapContainer center={defaultCenter} zoom={5} style={{ height: '360px', width: '100%' }} scrollWheelZoom>
             <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution={MAP_TILE_ATTRIBUTION}
+              url={MAP_TILE_URL}
+              subdomains={MAP_TILE_SUBDOMAINS}
+              maxZoom={MAP_TILE_MAX_ZOOM}
             />
             <SetViewOnFences fences={fences} />
             {fences.map((fence, i) => {
@@ -311,8 +314,10 @@ export default function Geofences() {
                   <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: '260px' }}>
                     <MapContainer center={formCenter} zoom={15} style={{ height: '100%', width: '100%' }} scrollWheelZoom>
                       <TileLayer
-                        attribution='&copy; OpenStreetMap'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        attribution={MAP_TILE_ATTRIBUTION}
+                        url={MAP_TILE_URL}
+                        subdomains={MAP_TILE_SUBDOMAINS}
+                        maxZoom={MAP_TILE_MAX_ZOOM}
                       />
                       <MapClickHandler onMapClick={handleMapClick} />
                       {flyTarget && <FlyTo lat={flyTarget.lat} lng={flyTarget.lng} />}

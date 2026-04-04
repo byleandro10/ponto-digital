@@ -71,11 +71,11 @@ export default defineConfig({
             },
           },
           {
-            // Tiles do OpenStreetMap (mapa offline)
-            urlPattern: /^https:\/\/[abc]\.tile\.openstreetmap\.org/,
+            // Tiles do mapa base (CARTO/OpenStreetMap)
+            urlPattern: /^https:\/\/[abcd]\.basemaps\.cartocdn\.com/,
             handler: 'CacheFirst',
             options: {
-              cacheName: 'osm-tiles',
+              cacheName: 'map-tiles',
               expiration: { maxEntries: 500, maxAgeSeconds: 60 * 60 * 24 * 7 },
               cacheableResponse: { statuses: [0, 200] },
             },

@@ -8,6 +8,7 @@ import {
   FiCheckCircle, FiXCircle, FiClock, FiCamera, FiRefreshCw, FiX, FiUser
 } from 'react-icons/fi';
 import AdminLayout from '../../components/AdminLayout';
+import { MAP_TILE_ATTRIBUTION, MAP_TILE_MAX_ZOOM, MAP_TILE_SUBDOMAINS, MAP_TILE_URL } from '../../utils/mapTiles';
 
 // Fix ícones do Leaflet no Vite/Webpack
 delete L.Icon.Default.prototype._getIconUrl;
@@ -251,8 +252,10 @@ export default function PunchMapPage() {
                 scrollWheelZoom={true}
               >
                 <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  attribution={MAP_TILE_ATTRIBUTION}
+                  url={MAP_TILE_URL}
+                  subdomains={MAP_TILE_SUBDOMAINS}
+                  maxZoom={MAP_TILE_MAX_ZOOM}
                 />
                 <FitBounds markers={visibleMarkers} geofences={geofences} />
 
