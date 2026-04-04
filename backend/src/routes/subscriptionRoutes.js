@@ -7,6 +7,7 @@ const { roleGuard } = require('../middlewares/roleGuard');
 const { allowBodyFields, allowQueryFields } = require('../middlewares/requestGuard');
 const { logSecurityEvent } = require('../utils/securityLogger');
 const {
+  createSetupIntent,
   createPreapproval,
   getStatus,
   changePlan,
@@ -26,15 +27,17 @@ const subscriptionLimiter = rateLimit({
   },
 });
 
+router.post('/setup-intent', subscriptionLimiter, allowBodyFields(['email']), createSetupIntent);
+
 router.use(authMiddleware);
 router.use(roleGuard('ADMIN', 'SUPER_ADMIN'));
 router.use(subscriptionLimiter);
 
-router.post('/create-preapproval', allowBodyFields(['plan', 'cardTokenId', 'paymentMethodId', 'email']), createPreapproval);
+router.post('/create-preapproval', allowBodyFields(['plan', 'paymentMethodId']), createPreapproval);
 router.get('/status', allowQueryFields([]), getStatus);
-router.put('/change-plan', allowBodyFields(['plan', 'cardTokenId', 'paymentMethodId', 'email']), changePlan);
+router.put('/change-plan', allowBodyFields(['plan', 'paymentMethodId']), changePlan);
 router.post('/cancel', allowBodyFields([]), cancelSubscription);
 router.get('/payments', allowQueryFields([]), getPayments);
-router.post('/reactivate', allowBodyFields(['plan', 'cardTokenId', 'paymentMethodId', 'email']), reactivateSubscription);
+router.post('/reactivate', allowBodyFields(['plan', 'paymentMethodId']), reactivateSubscription);
 
 module.exports = router;

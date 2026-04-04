@@ -1,8 +1,8 @@
 const express = require('express');
-const router = express.Router();
-const { handleMercadoPagoWebhook } = require('../controllers/webhookController');
+const { handleStripeWebhook } = require('../controllers/webhookController');
 
-// Webhook do MP — público, sem auth JWT
-router.post('/mercadopago', handleMercadoPagoWebhook);
+const router = express.Router();
+
+router.post('/stripe', express.raw({ type: 'application/json' }), handleStripeWebhook);
 
 module.exports = router;

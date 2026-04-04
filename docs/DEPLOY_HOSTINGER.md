@@ -62,10 +62,9 @@ FRONTEND_URL=https://ponto.lbrcore.com
 ALLOWED_ORIGINS=https://ponto.lbrcore.com
 VITE_API_BASE_URL=/api
 NOTIFICATION_TIMEZONE=America/Sao_Paulo
-MP_ACCESS_TOKEN=
-MP_PUBLIC_KEY=
-VITE_MP_PUBLIC_KEY=
-MP_WEBHOOK_SECRET=
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+VITE_STRIPE_PUBLIC_KEY=
 SUPER_ADMIN_EMAIL=
 SUPER_ADMIN_PASSWORD=
 ```
@@ -76,7 +75,7 @@ Notas:
 - Em producao na Hostinger, nao use `localhost` como host do MySQL. Use o host remoto exibido no painel.
 - `JWT_SECRET` deve ter pelo menos 32 caracteres.
 - `VITE_API_BASE_URL` deve ser `/api`.
-- `VITE_MP_PUBLIC_KEY` deve repetir a chave publica usada pelo frontend.
+- `VITE_STRIPE_PUBLIC_KEY` deve repetir a chave publica usada pelo frontend.
 - nao cadastre `DIRECT_URL`
 - nao use `api.lbrcore.com` nesta configuracao
 
@@ -118,19 +117,19 @@ Antes do primeiro push para producao:
 - confirme que as variaveis no painel estao preenchidas
 - confirme que `ponto.lbrcore.com` ja responde no DNS da Hostinger
 
-## Mercado Pago
+## Stripe
 
-Depois que a API estiver publica, atualize o webhook no painel do Mercado Pago:
+Depois que a API estiver publica, atualize o webhook no painel da Stripe:
 
-- URL: `https://ponto.lbrcore.com/api/webhooks/mercadopago`
+- URL: `https://ponto.lbrcore.com/api/webhooks/stripe`
 
 Tambem revise:
 
 - `FRONTEND_URL`
 - `APP_URL`
 - `VITE_API_BASE_URL`
-- `MP_WEBHOOK_SECRET`
-- `VITE_MP_PUBLIC_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `VITE_STRIPE_PUBLIC_KEY`
 
 ## Checklist pos-deploy
 
@@ -142,8 +141,8 @@ Tambem revise:
 - rotas autenticadas continuam chamando `/api`
 - conexao com MySQL da Hostinger funciona
 - geracao de relatorios e exportacoes funciona
-- SDK do Mercado Pago carrega no frontend
-- webhook do Mercado Pago responde no dominio publico
+- Stripe.js carrega no frontend
+- webhook da Stripe responde no dominio publico
 
 ## Configuracao operacional final
 
@@ -151,4 +150,4 @@ Tambem revise:
 2. `FRONTEND_URL=https://ponto.lbrcore.com`
 3. `ALLOWED_ORIGINS=https://ponto.lbrcore.com`
 4. `VITE_API_BASE_URL=/api`
-5. webhook Mercado Pago em `https://ponto.lbrcore.com/api/webhooks/mercadopago`
+5. webhook Stripe em `https://ponto.lbrcore.com/api/webhooks/stripe`

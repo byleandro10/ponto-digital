@@ -84,7 +84,7 @@ describe('authController register with billing', () => {
     expect(res.json).toHaveBeenCalledWith({ error: 'Este CNPJ ja possui uma empresa cadastrada.' });
   });
 
-  test('requires card token when signup includes a plan', async () => {
+  test('requires stripe payment method when signup includes a plan', async () => {
     const req = {
       body: {
         companyName: 'Empresa',
@@ -101,7 +101,7 @@ describe('authController register with billing', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({
-      error: 'Para iniciar o trial com cobranca automatica, valide o cartao no checkout antes de concluir o cadastro.',
+      error: 'Para iniciar o trial com cobranca automatica, valide o cartao pela Stripe antes de concluir o cadastro.',
     });
   });
 
@@ -127,8 +127,7 @@ describe('authController register with billing', () => {
         email: 'novo@empresa.com',
         password: 'SenhaForte123',
         plan: 'professional',
-        cardTokenId: 'tok_123',
-        paymentMethodId: 'master',
+        paymentMethodId: 'pm_123',
       },
     };
     const res = makeRes();
@@ -139,8 +138,7 @@ describe('authController register with billing', () => {
       companyId: 'company-1',
       userId: 'user-1',
       plan: 'PROFESSIONAL',
-      cardTokenId: 'tok_123',
-      paymentMethodId: 'master',
+      paymentMethodId: 'pm_123',
     });
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json.mock.calls[0][0].message).toMatch(/assinatura iniciada/i);
@@ -155,7 +153,7 @@ describe('authController register with billing', () => {
       users: [{ id: 'user-1', name: 'Admin Teste', email: 'novo@empresa.com', role: 'ADMIN' }],
     });
     mockBillingService.createSubscription.mockRejectedValue(
-      new mockBillingService.BillingError('Falha no Mercado Pago.', 422)
+      new mockBillingService.BillingError('Falha na Stripe.', 422)
     );
 
     const req = {
@@ -166,8 +164,7 @@ describe('authController register with billing', () => {
         email: 'novo@empresa.com',
         password: 'SenhaForte123',
         plan: 'basic',
-        cardTokenId: 'tok_123',
-        paymentMethodId: 'visa',
+        paymentMethodId: 'pm_visa',
       },
     };
     const res = makeRes();
@@ -179,6 +176,6 @@ describe('authController register with billing', () => {
     expect(mockPrisma.user.deleteMany).toHaveBeenCalledWith({ where: { companyId: 'company-1' } });
     expect(mockPrisma.company.deleteMany).toHaveBeenCalledWith({ where: { id: 'company-1' } });
     expect(res.status).toHaveBeenCalledWith(422);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Falha no Mercado Pago.' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'Falha na Stripe.' });
   });
 });

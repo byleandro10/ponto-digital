@@ -68,6 +68,7 @@ app.use(cors({
   credentials: true,
 }));
 
+app.use('/api/webhooks', webhookRoutes);
 app.use(express.json({ limit: '2mb' }));
 
 const limiter = rateLimit({
@@ -94,7 +95,6 @@ const authLimiter = rateLimit({
 });
 
 app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/webhooks', webhookRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/super-admin', superAdminRoutes);

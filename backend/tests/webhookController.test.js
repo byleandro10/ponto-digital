@@ -1,12 +1,16 @@
 const mockBillingService = {
-  handlePaymentWebhook: jest.fn(),
-  handlePreapprovalWebhook: jest.fn(),
+  handleStripeInvoiceEvent: jest.fn(),
+  handleStripeSubscriptionEvent: jest.fn(),
+};
+
+const mockStripeService = {
+  constructWebhookEvent: jest.fn(),
 };
 
 jest.mock('../src/services/billingService', () => mockBillingService);
+jest.mock('../src/services/stripeService', () => mockStripeService);
 
-const { handleMercadoPagoWebhook, verifyWebhookSignature } = require('../src/controllers/webhookController');
-const crypto = require('crypto');
+const { handleStripeWebhook } = require('../src/controllers/webhookController');
 
 function mockRes() {
   const res = {};
@@ -15,57 +19,48 @@ function mockRes() {
   return res;
 }
 
-function sign(dataId, requestId, secret, ts = '1712250000') {
-  const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
-  const hash = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
-  return `ts=${ts},v1=${hash}`;
-}
-
 describe('webhookController', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.MP_WEBHOOK_SECRET = 'super-secret';
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
   });
 
-  test('valida assinatura HMAC corretamente', () => {
-    const signature = sign('123', 'req-1', process.env.MP_WEBHOOK_SECRET);
-    expect(verifyWebhookSignature({
-      signature,
-      requestId: 'req-1',
-      dataId: '123',
-      secret: process.env.MP_WEBHOOK_SECRET,
-    })).toBe(true);
-  });
+  test('processa invoice.payment_succeeded', async () => {
+    mockStripeService.constructWebhookEvent.mockReturnValue({
+      type: 'invoice.payment_succeeded',
+      data: { object: { id: 'in_123' } },
+    });
 
-  test('processa webhook de pagamento aprovado', async () => {
-    const req = {
-      body: { type: 'payment', data: { id: '123' } },
-      headers: {
-        'x-request-id': 'req-1',
-        'x-signature': sign('123', 'req-1', process.env.MP_WEBHOOK_SECRET),
-      },
-    };
+    const req = { body: Buffer.from('{}'), headers: { 'stripe-signature': 'sig' } };
     const res = mockRes();
 
-    await handleMercadoPagoWebhook(req, res);
+    await handleStripeWebhook(req, res);
 
-    expect(mockBillingService.handlePaymentWebhook).toHaveBeenCalledWith('123');
+    expect(mockBillingService.handleStripeInvoiceEvent).toHaveBeenCalledWith({ id: 'in_123' });
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
-  test('processa webhook de preapproval recusando assinatura invalida', async () => {
-    const req = {
-      body: { type: 'subscription_preapproval', data: { id: 'pre_123' } },
-      headers: {
-        'x-request-id': 'req-2',
-        'x-signature': 'ts=1712250000,v1=invalid',
-      },
-    };
+  test('processa customer.subscription.updated', async () => {
+    mockStripeService.constructWebhookEvent.mockReturnValue({
+      type: 'customer.subscription.updated',
+      data: { object: { id: 'sub_123' } },
+    });
+
+    const req = { body: Buffer.from('{}'), headers: { 'stripe-signature': 'sig' } };
     const res = mockRes();
 
-    await handleMercadoPagoWebhook(req, res);
+    await handleStripeWebhook(req, res);
 
-    expect(mockBillingService.handlePreapprovalWebhook).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(401);
+    expect(mockBillingService.handleStripeSubscriptionEvent).toHaveBeenCalledWith({ id: 'sub_123' });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  test('rejeita webhook sem assinatura', async () => {
+    const req = { body: Buffer.from('{}'), headers: {} };
+    const res = mockRes();
+
+    await handleStripeWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
   });
 });

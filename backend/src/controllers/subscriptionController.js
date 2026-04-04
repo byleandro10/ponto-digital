@@ -1,32 +1,42 @@
-/**
- * Controller de Assinaturas / Billing
- *
- * Camada fina: recebe HTTP, delega ao billingService, trata erros.
- */
 const billingService = require('../services/billingService');
+const stripeService = require('../services/stripeService');
+
 const { BillingError, PLAN_PRICES, PLAN_NAMES } = billingService;
 
-/**
- * POST /api/subscriptions/create-preapproval
- * POST /api/billing/create-subscription
- *
- * Cria assinatura recorrente alinhada ao trial de 30 dias da empresa.
- */
+async function createSetupIntent(req, res) {
+  try {
+    const setupIntent = await stripeService.createSetupIntent({
+      metadata: {
+        email: req.body?.email || '',
+        companyId: req.companyId || '',
+        userId: req.userId || '',
+      },
+    });
+
+    return res.status(201).json({
+      clientSecret: setupIntent.client_secret,
+      setupIntentId: setupIntent.id,
+    });
+  } catch (error) {
+    console.error('[Controller] Erro ao criar SetupIntent:', error);
+    return res.status(500).json({ error: 'Erro ao iniciar validacao do cartao com a Stripe.' });
+  }
+}
+
 async function createPreapproval(req, res) {
   try {
-    const { plan, cardTokenId, paymentMethodId } = req.body;
+    const { plan, paymentMethodId } = req.body;
     const companyId = req.companyId;
 
     const subscription = await billingService.createSubscription({
       companyId,
       userId: req.userId,
       plan,
-      cardTokenId,
       paymentMethodId,
     });
 
     res.status(201).json({
-      message: `Assinatura criada com sucesso! ${billingService.TRIAL_DAYS} dias grátis ativados.`,
+      message: `Assinatura criada com sucesso! ${billingService.TRIAL_DAYS} dias gratis ativados.`,
       subscription,
     });
   } catch (error) {
@@ -38,10 +48,6 @@ async function createPreapproval(req, res) {
   }
 }
 
-/**
- * GET /api/subscriptions/status
- * GET /api/billing/subscription-status
- */
 async function getStatus(req, res) {
   try {
     const subscription = await billingService.getSubscriptionStatus(req.companyId);
@@ -52,17 +58,13 @@ async function getStatus(req, res) {
   }
 }
 
-/**
- * PUT /api/subscriptions/change-plan
- */
 async function changePlan(req, res) {
   try {
-    const { plan, cardTokenId, paymentMethodId } = req.body;
+    const { plan, paymentMethodId } = req.body;
     const result = await billingService.changePlan({
       companyId: req.companyId,
       userId: req.userId,
       plan,
-      cardTokenId,
       paymentMethodId,
     });
 
@@ -76,10 +78,6 @@ async function changePlan(req, res) {
   }
 }
 
-/**
- * POST /api/subscriptions/cancel
- * POST /api/billing/cancel-subscription
- */
 async function cancelSubscription(req, res) {
   try {
     const result = await billingService.cancelSubscription(req.companyId);
@@ -93,9 +91,6 @@ async function cancelSubscription(req, res) {
   }
 }
 
-/**
- * GET /api/subscriptions/payments
- */
 async function getPayments(req, res) {
   try {
     const payments = await billingService.listPayments(req.companyId);
@@ -106,16 +101,12 @@ async function getPayments(req, res) {
   }
 }
 
-/**
- * POST /api/subscriptions/reactivate
- */
 async function reactivateSubscription(req, res) {
   try {
-    const { cardTokenId, paymentMethodId, plan } = req.body;
+    const { paymentMethodId, plan } = req.body;
     const result = await billingService.reactivateSubscription({
       companyId: req.companyId,
       userId: req.userId,
-      cardTokenId,
       paymentMethodId,
       plan,
     });
@@ -126,8 +117,18 @@ async function reactivateSubscription(req, res) {
       return res.status(error.statusCode).json({ error: error.message });
     }
     console.error('[Controller] Erro ao reativar assinatura:', error);
-    res.status(500).json({ error: 'Erro ao reativar assinatura. Verifique os dados do cartão e tente novamente.' });
+    res.status(500).json({ error: 'Erro ao reativar assinatura. Verifique os dados do cartao e tente novamente.' });
   }
 }
 
-module.exports = { createPreapproval, getStatus, changePlan, cancelSubscription, getPayments, reactivateSubscription, PLAN_PRICES, PLAN_NAMES };
+module.exports = {
+  createSetupIntent,
+  createPreapproval,
+  getStatus,
+  changePlan,
+  cancelSubscription,
+  getPayments,
+  reactivateSubscription,
+  PLAN_PRICES,
+  PLAN_NAMES,
+};

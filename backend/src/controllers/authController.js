@@ -39,14 +39,13 @@ async function register(req, res) {
   let createdCompanyId = null;
 
   try {
-    let { companyName, cnpj, name, email, password, plan, cardTokenId, paymentMethodId } = req.body;
+    let { companyName, cnpj, name, email, password, plan, paymentMethodId } = req.body;
 
     companyName = sanitize(companyName);
     cnpj = sanitize(cnpj);
     name = sanitize(name);
     email = sanitize(email)?.toLowerCase();
     password = password || '';
-    cardTokenId = sanitize(cardTokenId);
     paymentMethodId = sanitize(paymentMethodId);
 
     if (!companyName || !cnpj || !name || !email || !password) {
@@ -70,10 +69,10 @@ async function register(req, res) {
       return res.status(400).json({ error: 'Nome deve ter no minimo 3 caracteres.' });
     }
 
-    const requiresBillingOnSignup = Boolean(plan || cardTokenId || paymentMethodId);
-    if (requiresBillingOnSignup && !cardTokenId) {
+    const requiresBillingOnSignup = Boolean(plan || paymentMethodId);
+    if (requiresBillingOnSignup && !paymentMethodId) {
       return res.status(400).json({
-        error: 'Para iniciar o trial com cobranca automatica, valide o cartao no checkout antes de concluir o cadastro.',
+        error: 'Para iniciar o trial com cobranca automatica, valide o cartao pela Stripe antes de concluir o cadastro.',
       });
     }
 
@@ -127,7 +126,6 @@ async function register(req, res) {
           companyId: company.id,
           userId: company.users[0].id,
           plan,
-          cardTokenId,
           paymentMethodId,
         });
       } catch (error) {

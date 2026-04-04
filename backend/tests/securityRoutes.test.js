@@ -18,6 +18,7 @@ jest.mock('../src/controllers/timeEntryController', () => ({
 }));
 
 jest.mock('../src/controllers/subscriptionController', () => ({
+  createSetupIntent: (req, res) => res.status(201).json({ ok: true }),
   createPreapproval: (req, res) => res.status(200).json({ ok: true }),
   getStatus: (req, res) => res.status(200).json({ ok: true }),
   changePlan: (req, res) => res.status(200).json({ ok: true }),

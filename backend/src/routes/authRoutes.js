@@ -11,7 +11,7 @@ const { authMiddleware, employeeAuth } = require('../middlewares/auth');
 const { roleGuard } = require('../middlewares/roleGuard');
 const { allowBodyFields } = require('../middlewares/requestGuard');
 
-router.post('/register', allowBodyFields(['companyName', 'cnpj', 'name', 'email', 'password', 'plan', 'cardTokenId', 'paymentMethodId']), register);
+router.post('/register', allowBodyFields(['companyName', 'cnpj', 'name', 'email', 'password', 'plan', 'paymentMethodId']), register);
 router.post('/login/admin', allowBodyFields(['email', 'password']), loginAdmin);
 router.post('/login/employee', allowBodyFields(['cpf', 'password']), loginEmployee);
 

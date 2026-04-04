@@ -7,6 +7,7 @@ const { roleGuard } = require('../middlewares/roleGuard');
 const { allowBodyFields, allowQueryFields } = require('../middlewares/requestGuard');
 const { logSecurityEvent } = require('../utils/securityLogger');
 const {
+  createSetupIntent,
   createPreapproval,
   getStatus,
   cancelSubscription,
@@ -23,11 +24,13 @@ const billingLimiter = rateLimit({
   },
 });
 
+router.post('/setup-intent', billingLimiter, allowBodyFields(['email']), createSetupIntent);
+
 router.use(authMiddleware);
 router.use(roleGuard('ADMIN', 'SUPER_ADMIN'));
 router.use(billingLimiter);
 
-router.post('/create-subscription', allowBodyFields(['plan', 'cardTokenId', 'paymentMethodId', 'email']), createPreapproval);
+router.post('/create-subscription', allowBodyFields(['plan', 'paymentMethodId']), createPreapproval);
 router.post('/cancel-subscription', allowBodyFields([]), cancelSubscription);
 router.get('/subscription-status', allowQueryFields([]), getStatus);
 
