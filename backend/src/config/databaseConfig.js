@@ -23,8 +23,9 @@ function parseInteger(value, fallback) {
 }
 
 function buildDatabaseUrlFromParts(env) {
-  const host = env.DB_HOST;
-  const port = env.DB_PORT || '3306';
+  const socketPath = env.DB_SOCKET_PATH;
+  const host = socketPath ? 'localhost' : env.DB_HOST;
+  const port = socketPath ? '' : (env.DB_PORT || '3306');
   const user = env.DB_USER;
   const password = env.DB_PASSWORD;
   const database = env.DB_NAME;
@@ -33,11 +34,15 @@ function buildDatabaseUrlFromParts(env) {
     return null;
   }
 
-  return `mysql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${encodeURIComponent(database)}`;
+  const authority = port ? `${host}:${port}` : host;
+  const databaseUrl = `mysql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${authority}/${encodeURIComponent(database)}`;
+
+  return normalizeDatabaseUrl(databaseUrl, env);
 }
 
 function getResolvedDatabaseUrl(env = process.env) {
-  const databaseUrl = env.DATABASE_URL || buildDatabaseUrlFromParts(env);
+  const rawDatabaseUrl = env.DATABASE_URL || buildDatabaseUrlFromParts(env);
+  const databaseUrl = normalizeDatabaseUrl(rawDatabaseUrl, env);
   if (!databaseUrl) {
     throw new Error(
       'Banco nao configurado. Defina DATABASE_URL ou informe DB_HOST, DB_PORT, DB_USER, DB_PASSWORD e DB_NAME.'
@@ -74,6 +79,49 @@ function parseDatabaseUrl(databaseUrl) {
   };
 }
 
+function normalizeDatabaseUrl(databaseUrl, env = process.env) {
+  if (!databaseUrl) {
+    return null;
+  }
+
+  const sanitizedUrl = String(databaseUrl).trim().replace(/^DATABASE_URL=/i, '');
+  let parsed;
+
+  try {
+    parsed = new URL(sanitizedUrl);
+  } catch (error) {
+    throw new Error(`DATABASE_URL invalida: ${error.message}`);
+  }
+
+  if (!['mysql:', 'mariadb:'].includes(parsed.protocol)) {
+    throw new Error(`DATABASE_URL deve usar protocolo mysql:// ou mariadb://. Recebido: ${parsed.protocol}`);
+  }
+
+  const socketPath = env.DB_SOCKET_PATH || parsed.searchParams.get('socket');
+  if (socketPath) {
+    parsed.hostname = 'localhost';
+    parsed.port = '';
+    parsed.searchParams.set('socket', socketPath);
+  }
+
+  // Parametros conservadores para ambiente compartilhado da Hostinger.
+  if (!parsed.searchParams.has('connection_limit')) {
+    parsed.searchParams.set('connection_limit', env.DB_CONNECTION_LIMIT || '3');
+  }
+  if (!parsed.searchParams.has('pool_timeout')) {
+    parsed.searchParams.set('pool_timeout', env.DB_POOL_TIMEOUT || '30');
+  }
+  if (!parsed.searchParams.has('connect_timeout')) {
+    parsed.searchParams.set('connect_timeout', env.DB_CONNECT_TIMEOUT || '30');
+  }
+
+  if (parseBoolean(env.DB_SSL)) {
+    parsed.searchParams.set('sslaccept', parseBoolean(env.DB_SSL_REJECT_UNAUTHORIZED) === false ? 'accept_invalid_certs' : 'strict');
+  }
+
+  return parsed.toString();
+}
+
 function validateProductionDatabaseHost({ host }, env = process.env) {
   if (env.NODE_ENV !== 'production') {
     return;
@@ -85,40 +133,25 @@ function validateProductionDatabaseHost({ host }, env = process.env) {
   }
 }
 
-function getMariaDbConfig(env = process.env) {
+function getDatabaseDiagnostics(env = process.env) {
   const databaseUrl = getResolvedDatabaseUrl(env);
   const parsed = parseDatabaseUrl(databaseUrl);
   validateProductionDatabaseHost(parsed, env);
 
-  const config = {
-    user: parsed.user,
-    password: parsed.password,
+  return {
+    databaseUrl,
+    host: parsed.query.get('socket') ? 'localhost (socket)' : parsed.host,
+    port: parsed.query.get('socket') ? 'socket' : parsed.port,
     database: parsed.database,
-    connectTimeout: parseInteger(env.DB_CONNECT_TIMEOUT, parseInteger(parsed.query.get('connect_timeout'), 5000)),
-    acquireTimeout: parseInteger(env.DB_ACQUIRE_TIMEOUT, 10000),
-    connectionLimit: parseInteger(env.DB_CONNECTION_LIMIT, 10),
-    idleTimeout: parseInteger(env.DB_IDLE_TIMEOUT, 300),
+    connectionLimit: parsed.query.get('connection_limit') || 'default',
+    poolTimeout: parsed.query.get('pool_timeout') || 'default',
+    connectTimeout: parsed.query.get('connect_timeout') || 'default',
+    socket: parsed.query.get('socket') || '',
+    sslaccept: parsed.query.get('sslaccept') || '',
   };
-
-  const socketPath = env.DB_SOCKET_PATH || parsed.query.get('socket');
-  if (socketPath) {
-    config.socketPath = socketPath;
-  } else {
-    config.host = env.DB_HOST || parsed.host;
-    config.port = parseInteger(env.DB_PORT, parsed.port);
-  }
-
-  const sslEnabled = parseBoolean(env.DB_SSL) ?? ['require', 'required'].includes((env.DB_SSL_MODE || '').toLowerCase());
-  const rejectUnauthorized = parseBoolean(env.DB_SSL_REJECT_UNAUTHORIZED);
-
-  if (sslEnabled) {
-    config.ssl = rejectUnauthorized === false ? { rejectUnauthorized: false } : true;
-  }
-
-  return { databaseUrl, config };
 }
 
 module.exports = {
   getResolvedDatabaseUrl,
-  getMariaDbConfig,
+  getDatabaseDiagnostics,
 };

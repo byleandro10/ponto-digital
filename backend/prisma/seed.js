@@ -1,6 +1,10 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
+const { loadEnv } = require('../src/config/env');
+const { getResolvedDatabaseUrl } = require('../src/config/databaseConfig');
 
+loadEnv();
+process.env.DATABASE_URL = getResolvedDatabaseUrl(process.env);
 const prisma = new PrismaClient();
 
 async function main() {

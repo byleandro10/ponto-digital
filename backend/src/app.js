@@ -138,6 +138,17 @@ if (require.main === module) {
   const PORT = process.env.PORT || 3001;
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor rodando na porta ${PORT} (0.0.0.0)`);
+
+    prisma.$connect()
+      .then(() => {
+        console.log('[startup] conexao inicial com banco estabelecida com sucesso.');
+      })
+      .catch((error) => {
+        console.error('[startup] falha ao conectar ao banco:', {
+          code: error.code || 'UNKNOWN',
+          message: error.message,
+        });
+      });
   });
 }
 

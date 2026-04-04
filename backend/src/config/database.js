@@ -1,21 +1,31 @@
 const { PrismaClient } = require('@prisma/client');
-const { PrismaMariaDb } = require('@prisma/adapter-mariadb');
-const { getMariaDbConfig } = require('./databaseConfig');
+const { getResolvedDatabaseUrl, getDatabaseDiagnostics } = require('./databaseConfig');
 
-const { databaseUrl, config } = getMariaDbConfig();
+const databaseUrl = getResolvedDatabaseUrl();
 process.env.DATABASE_URL = databaseUrl;
+const diagnostics = getDatabaseDiagnostics();
 
-// Usa o driver JavaScript do MariaDB/MySQL para evitar o engine Rust no runtime da Hostinger.
-const adapter = new PrismaMariaDb(config, {
-  database: config.database,
-  onConnectionError: (error) => {
-    console.error('[database] connection error:', error.message);
-  },
+const prismaLogLevels = ['error', 'warn'];
+if (process.env.PRISMA_LOG_LEVEL === 'info') {
+  prismaLogLevels.push('info');
+}
+
+console.log('[database] config:', {
+  host: diagnostics.host,
+  port: diagnostics.port,
+  database: diagnostics.database,
+  connectionLimit: diagnostics.connectionLimit,
+  poolTimeout: diagnostics.poolTimeout,
+  connectTimeout: diagnostics.connectTimeout,
+  socket: diagnostics.socket || undefined,
+  sslaccept: diagnostics.sslaccept || undefined,
 });
 
 // Singleton: reutilizar instancia em hot-reload (dev) e evitar exaustao de conexoes
 const globalForPrisma = globalThis;
-const prisma = globalForPrisma.__prisma || new PrismaClient({ adapter });
+const prisma = globalForPrisma.__prisma || new PrismaClient({
+  log: prismaLogLevels,
+});
 
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.__prisma = prisma;
