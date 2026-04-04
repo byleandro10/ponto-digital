@@ -10,7 +10,7 @@
     "dev": "echo Use 'npm run dev:backend' e 'npm run dev:frontend' em terminais separados",
     "dev:backend": "cd backend && node src/app.js",
     "dev:frontend": "cd frontend && npx vite --port 3000 --host",
-    "install:frontend": "npm --prefix frontend install",
+    "install:frontend": "npm --prefix frontend install --include=dev",
     "build:frontend": "npm --prefix frontend run build",
     "prisma:generate": "npx prisma generate --schema=backend/prisma/schema.prisma",
     "build": "npm run install:frontend && npm run prisma:generate && npm run build:frontend",

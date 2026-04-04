@@ -31,7 +31,7 @@ Use Node.js `20.x` ou `22.x`.
 
 O `npm run build` faz:
 
-1. instalar dependencias do `frontend`
+1. instalar dependencias do `frontend`, incluindo `devDependencies` como `vite`
 2. gerar o Prisma Client
 3. gerar `frontend/dist`
 
@@ -82,6 +82,10 @@ Notas:
 8. Selecionar Node.js `20.x` ou `22.x`.
 9. Cadastrar todas as variaveis de ambiente.
 10. Executar o primeiro deploy.
+
+Se aparecer o erro `vite: command not found`, isso normalmente significa que o ambiente instalou o `frontend` sem as dependencias de build. Neste projeto, o script `npm run build` ja corrige isso executando:
+
+- `npm --prefix frontend install --include=dev`
 
 ## GitHub e deploy automatico
 
