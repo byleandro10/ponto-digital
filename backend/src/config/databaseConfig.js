@@ -91,8 +91,6 @@ function getMariaDbConfig(env = process.env) {
   validateProductionDatabaseHost(parsed, env);
 
   const config = {
-    host: parsed.host,
-    port: parsed.port,
     user: parsed.user,
     password: parsed.password,
     database: parsed.database,
@@ -101,6 +99,14 @@ function getMariaDbConfig(env = process.env) {
     connectionLimit: parseInteger(env.DB_CONNECTION_LIMIT, 10),
     idleTimeout: parseInteger(env.DB_IDLE_TIMEOUT, 300),
   };
+
+  const socketPath = env.DB_SOCKET_PATH || parsed.query.get('socket');
+  if (socketPath) {
+    config.socketPath = socketPath;
+  } else {
+    config.host = env.DB_HOST || parsed.host;
+    config.port = parseInteger(env.DB_PORT, parsed.port);
+  }
 
   const sslEnabled = parseBoolean(env.DB_SSL) ?? ['require', 'required'].includes((env.DB_SSL_MODE || '').toLowerCase());
   const rejectUnauthorized = parseBoolean(env.DB_SSL_REJECT_UNAUTHORIZED);
