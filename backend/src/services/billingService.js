@@ -81,21 +81,10 @@ function getTrialState(company, subscription, now = new Date()) {
 }
 
 async function validateCardForBilling({ companyId, payerEmail, cardTokenId, paymentMethodId, purpose }) {
-  if (!paymentMethodId) {
-    return null;
-  }
-
-  try {
-    return await mpService.validateCardToken({
-      cardTokenId,
-      paymentMethodId,
-      payerEmail,
-      externalRef: companyId,
-      description: `Ponto Digital - validacao do cartao (${purpose})`,
-    });
-  } catch (error) {
-    throw new BillingError(`Falha na validacao do cartao: ${error.message}`, 422);
-  }
+  // O card_token do Mercado Pago e de uso unico.
+  // Neste fluxo, a propria criacao da preapproval e a validacao pratica do cartao.
+  // Tentar validar antes queimaria o token e faria a assinatura falhar em seguida.
+  return null;
 }
 
 async function ensureExistingTrialSubscription(tx, { companyId, plan, companyTrialEndsAt }) {
@@ -168,16 +157,21 @@ async function createSubscription({ companyId, userId, plan, cardTokenId, paymen
   }));
 
   const firstChargeDate = isTrialActive ? trialEndsAt : now;
-  const mpResult = await mpService.createPreapproval({
-    reason: `Ponto Digital - Plano ${PLAN_NAMES[planKey]}`,
-    externalRef: localSubscription.id,
-    payerEmail: billingUser.email,
-    cardTokenId,
-    amount: PLAN_PRICES[planKey],
-    backUrl: `${getFrontendBaseUrl().replace(/\/+$/, '')}/admin/subscription`,
-    startDate: firstChargeDate,
-    notificationUrl: getWebhookUrl(),
-  });
+  let mpResult;
+  try {
+    mpResult = await mpService.createPreapproval({
+      reason: `Ponto Digital - Plano ${PLAN_NAMES[planKey]}`,
+      externalRef: localSubscription.id,
+      payerEmail: billingUser.email,
+      cardTokenId,
+      amount: PLAN_PRICES[planKey],
+      backUrl: `${getFrontendBaseUrl().replace(/\/+$/, '')}/admin/subscription`,
+      startDate: firstChargeDate,
+      notificationUrl: getWebhookUrl(),
+    });
+  } catch (error) {
+    throw new BillingError(`Falha ao criar assinatura no Mercado Pago: ${error.message}`, 422);
+  }
 
   if (!['authorized', 'pending'].includes(String(mpResult.status || '').toLowerCase())) {
     throw new BillingError('O Mercado Pago nao autorizou o cartao informado para a assinatura.', 422);
@@ -520,16 +514,21 @@ async function changePlan({ companyId, userId, plan, cardTokenId, paymentMethodI
   const { isTrialActive, trialEndsAt } = getTrialState(company, subscription, now);
   const startDate = isTrialActive ? trialEndsAt : now;
 
-  const mpResult = await mpService.createPreapproval({
-    reason: `Ponto Digital - Plano ${PLAN_NAMES[planKey]}`,
-    externalRef: subscription.id,
-    payerEmail: billingUser.email,
-    cardTokenId,
-    amount: PLAN_PRICES[planKey],
-    backUrl: `${getFrontendBaseUrl().replace(/\/+$/, '')}/admin/subscription`,
-    startDate,
-    notificationUrl: getWebhookUrl(),
-  });
+  let mpResult;
+  try {
+    mpResult = await mpService.createPreapproval({
+      reason: `Ponto Digital - Plano ${PLAN_NAMES[planKey]}`,
+      externalRef: subscription.id,
+      payerEmail: billingUser.email,
+      cardTokenId,
+      amount: PLAN_PRICES[planKey],
+      backUrl: `${getFrontendBaseUrl().replace(/\/+$/, '')}/admin/subscription`,
+      startDate,
+      notificationUrl: getWebhookUrl(),
+    });
+  } catch (error) {
+    throw new BillingError(`Falha ao atualizar assinatura no Mercado Pago: ${error.message}`, 422);
+  }
 
   if (!['authorized', 'pending'].includes(String(mpResult.status || '').toLowerCase())) {
     throw new BillingError('O Mercado Pago nao autorizou o novo cartao para a troca de plano.', 422);
@@ -583,16 +582,21 @@ async function reactivateSubscription({ companyId, userId, cardTokenId, paymentM
   });
 
   const now = new Date();
-  const mpResult = await mpService.createPreapproval({
-    reason: `Ponto Digital - Plano ${PLAN_NAMES[planKey]}`,
-    externalRef: targetSubscription.id,
-    payerEmail: billingUser.email,
-    cardTokenId,
-    amount: PLAN_PRICES[planKey],
-    backUrl: `${getFrontendBaseUrl().replace(/\/+$/, '')}/admin/subscription`,
-    startDate: now,
-    notificationUrl: getWebhookUrl(),
-  });
+  let mpResult;
+  try {
+    mpResult = await mpService.createPreapproval({
+      reason: `Ponto Digital - Plano ${PLAN_NAMES[planKey]}`,
+      externalRef: targetSubscription.id,
+      payerEmail: billingUser.email,
+      cardTokenId,
+      amount: PLAN_PRICES[planKey],
+      backUrl: `${getFrontendBaseUrl().replace(/\/+$/, '')}/admin/subscription`,
+      startDate: now,
+      notificationUrl: getWebhookUrl(),
+    });
+  } catch (error) {
+    throw new BillingError(`Falha ao reativar assinatura no Mercado Pago: ${error.message}`, 422);
+  }
 
   if (!['authorized', 'pending'].includes(String(mpResult.status || '').toLowerCase())) {
     throw new BillingError('O Mercado Pago nao autorizou o cartao informado para a reativacao.', 422);

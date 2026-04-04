@@ -62,7 +62,7 @@ export default function Register() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
-            <input type="password" name="password" value={form.password} onChange={handleChange} placeholder="••••••••" required minLength={6}
+            <input type="password" name="password" value={form.password} onChange={handleChange} placeholder="Minimo 8 caracteres, com maiuscula, minuscula e numero" required minLength={8}
               className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
           </div>
           <button type="submit" disabled={loading}

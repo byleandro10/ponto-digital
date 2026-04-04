@@ -141,7 +141,10 @@ export default function Checkout() {
     if (!cnpj || cnpj.replace(/\D/g, '').length !== 14) { toast.error('CNPJ deve ter 14 dígitos.'); return false; }
     if (!name || name.length < 3) { toast.error('Nome deve ter pelo menos 3 caracteres.'); return false; }
     if (!email || !email.includes('@')) { toast.error('E-mail inválido.'); return false; }
-    if (!password || password.length < 6) { toast.error('Senha deve ter pelo menos 6 caracteres.'); return false; }
+    if (!password || password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+      toast.error('Senha deve ter pelo menos 8 caracteres, com 1 maiuscula, 1 minuscula e 1 numero.');
+      return false;
+    }
     return true;
   };
 
@@ -298,7 +301,7 @@ export default function Checkout() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Minimo 8 caracteres, com maiuscula, minuscula e numero" className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
               </div>
             </div>
             <div className="flex justify-between mt-8">

@@ -72,7 +72,7 @@ describe('billingService', () => {
       companyId: 'company-1',
       email: 'admin@empresa.com',
     });
-    mockMpService.validateCardToken.mockRejectedValue(new Error('card_declined'));
+    mockMpService.createPreapproval.mockRejectedValue(new Error('card_declined'));
 
     await expect(billingService.createSubscription({
       companyId: 'company-1',
@@ -85,7 +85,6 @@ describe('billingService', () => {
       statusCode: 422,
     });
 
-    expect(mockMpService.createPreapproval).not.toHaveBeenCalled();
     jest.useRealTimers();
   });
 
@@ -116,7 +115,6 @@ describe('billingService', () => {
       companyId: 'company-1',
       email: 'admin@empresa.com',
     });
-    mockMpService.validateCardToken.mockResolvedValue({ id: 'pay-validation-1', status: 'approved' });
     mockMpService.createPreapproval.mockResolvedValue({ id: 'pre_123', status: 'authorized', payer_id: 12345 });
     mockPrisma.subscription.update.mockImplementation(async ({ data }) => ({
       id: 'sub-1',
