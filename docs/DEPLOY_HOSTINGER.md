@@ -46,6 +46,13 @@ Cadastre no painel da Hostinger:
 
 ```env
 DATABASE_URL=
+DB_HOST=
+DB_PORT=3306
+DB_USER=
+DB_PASSWORD=
+DB_NAME=
+DB_SSL=false
+DB_SSL_REJECT_UNAUTHORIZED=true
 JWT_SECRET=
 JWT_EXPIRES_IN=7d
 NODE_ENV=production
@@ -65,6 +72,8 @@ SUPER_ADMIN_PASSWORD=
 
 Notas:
 
+- O app aceita `DATABASE_URL` ou os campos separados `DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME`.
+- Em producao na Hostinger, nao use `localhost` como host do MySQL. Use o host remoto exibido no painel.
 - `JWT_SECRET` deve ter pelo menos 32 caracteres.
 - `VITE_API_BASE_URL` deve ser `/api`.
 - `VITE_MP_PUBLIC_KEY` deve repetir a chave publica usada pelo frontend.

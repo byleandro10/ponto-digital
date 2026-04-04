@@ -1,6 +1,15 @@
 const { execSync } = require('child_process');
+const { getResolvedDatabaseUrl } = require('../src/config/databaseConfig');
 
-const databaseUrl = process.env.DATABASE_URL || '';
+let databaseUrl = '';
+
+try {
+  databaseUrl = getResolvedDatabaseUrl(process.env);
+  process.env.DATABASE_URL = databaseUrl;
+} catch (error) {
+  console.log(`[db:prepare] ${error.message} Pulando bootstrap do schema.`);
+  process.exit(0);
+}
 
 if (!databaseUrl) {
   console.log('[db:prepare] DATABASE_URL ausente. Pulando bootstrap do schema.');
