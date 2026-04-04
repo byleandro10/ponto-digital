@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../../components/AdminLayout';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 import { FiCreditCard, FiCheck, FiAlertTriangle, FiDollarSign, FiShield, FiLock } from 'react-icons/fi';
 import { useAuth } from '../../contexts/AuthContext';
-import { getStripe } from '../../utils/stripe';
+import { useStripeCardSetup } from '../../hooks/useStripeCardSetup';
 
 const PLAN_NAMES = { BASIC: 'Basico', PROFESSIONAL: 'Profissional', ENTERPRISE: 'Empresarial' };
 const PLAN_PRICES = { BASIC: 49, PROFESSIONAL: 99, ENTERPRISE: 199 };
@@ -14,25 +14,6 @@ const PLANS = [
   { key: 'PROFESSIONAL', name: 'Profissional', price: 99, features: ['Ate 50 funcionarios', 'Cerca virtual', 'Relatorios avancados', 'Banco de horas'] },
   { key: 'ENTERPRISE', name: 'Empresarial', price: 199, features: ['Funcionarios ilimitados', 'Todas as funcionalidades', 'Suporte prioritario'] },
 ];
-
-const CARD_ELEMENT_OPTIONS = {
-  hidePostalCode: true,
-  style: {
-    base: {
-      fontSize: '16px',
-      color: '#111827',
-      fontFamily: 'system-ui, sans-serif',
-      lineHeight: '24px',
-      '::placeholder': {
-        color: '#9ca3af',
-      },
-    },
-    invalid: {
-      color: '#dc2626',
-      iconColor: '#dc2626',
-    },
-  },
-};
 
 export default function Subscription() {
   const { user, updateSubscriptionStatus } = useAuth();
@@ -44,18 +25,7 @@ export default function Subscription() {
   const [showCardForm, setShowCardForm] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState('BASIC');
   const [cardHolder, setCardHolder] = useState('');
-  const [stripeReady, setStripeReady] = useState(false);
-  const [stripeLoading, setStripeLoading] = useState(false);
-  const [stripeLoadError, setStripeLoadError] = useState('');
-  const [cardError, setCardError] = useState('');
-  const [cardComplete, setCardComplete] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-
-  const cardContainerRef = useRef(null);
-  const stripeRef = useRef(null);
-  const elementsRef = useRef(null);
-  const cardElementRef = useRef(null);
-  const setupIntentIdRef = useRef(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -83,68 +53,19 @@ export default function Subscription() {
     fetchData();
   }, [fetchData]);
 
-  const mountCardElement = useCallback(async () => {
-    if (!cardContainerRef.current) {
-      return;
-    }
-
-    setStripeLoading(true);
-    setStripeLoadError('');
-    setCardError('');
-    setCardComplete(false);
-
-    try {
-      const stripe = await getStripe();
-      if (!stripe) {
-        throw new Error('Nao foi possivel carregar o formulario seguro da Stripe.');
-      }
-
-      stripeRef.current = stripe;
-
-      if (cardElementRef.current) {
-        cardElementRef.current.unmount();
-        cardElementRef.current = null;
-      }
-
-      elementsRef.current = stripe.elements();
-
-      const cardElement = elementsRef.current.create('card', CARD_ELEMENT_OPTIONS);
-      cardElement.on('change', (event) => {
-        setCardError(event.error?.message || '');
-        setCardComplete(Boolean(event.complete));
-        setStripeReady(Boolean(event.complete));
-      });
-      cardElement.mount(cardContainerRef.current);
-      cardElementRef.current = cardElement;
-    } catch (error) {
-      setStripeLoadError(error.response?.data?.error || error.message || 'Nao foi possivel carregar o formulario seguro da Stripe.');
-    } finally {
-      setStripeLoading(false);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (!showCardForm || !cardContainerRef.current) return undefined;
-
-    let active = true;
-    (async () => {
-      if (!active) return;
-      await mountCardElement();
-    })();
-
-    return () => {
-      active = false;
-      setStripeReady(false);
-      setStripeLoadError('');
-      setCardError('');
-      setCardComplete(false);
-      if (cardElementRef.current) {
-        cardElementRef.current.unmount();
-        cardElementRef.current = null;
-      }
-      elementsRef.current = null;
-    };
-  }, [showCardForm, mountCardElement]);
+  const {
+    containerRef: cardContainerRef,
+    stripeReady,
+    stripeLoading,
+    stripeLoadError,
+    cardError,
+    cardComplete,
+    mount: mountCardElement,
+    confirmCardSetup,
+  } = useStripeCardSetup({
+    enabled: showCardForm,
+    email: user?.email || '',
+  });
 
   const needsReactivation = !subscription ||
     ['CANCELLED', 'EXPIRED', 'PAST_DUE'].includes(subscription?.status) ||
@@ -155,38 +76,19 @@ export default function Subscription() {
     if (!cardHolder || cardHolder.length < 3) { toast.error('O nome do titular e obrigatorio.'); return; }
     if (stripeLoadError) { toast.error(stripeLoadError); return; }
     if (cardError) { toast.error(cardError); return; }
-    if (!cardComplete || !stripeReady || !stripeRef.current || !cardElementRef.current) { toast.error('Preencha os dados do cartao para continuar.'); return; }
+    if (!cardComplete || !stripeReady) { toast.error('Preencha os dados do cartao para continuar.'); return; }
 
     setSubmitting(true);
     try {
-      const stripe = stripeRef.current;
-      const setupIntentRes = await api.post('/billing/setup-intent', { email: user?.email || '' });
-      const clientSecret = setupIntentRes.data?.clientSecret;
-      setupIntentIdRef.current = setupIntentRes.data?.setupIntentId || null;
-
-      if (!clientSecret) {
-        throw new Error('Nao foi possivel iniciar a validacao do cartao com a Stripe.');
-      }
-
-      const { setupIntent, error } = await stripe.confirmCardSetup(clientSecret, {
-        payment_method: {
-          card: cardElementRef.current,
-          billing_details: {
-            name: cardHolder,
-            email: user?.email || '',
-          },
-        },
+      const { paymentMethodId, setupIntentId } = await confirmCardSetup({
+        cardHolder,
       });
-
-      if (error) {
-        throw new Error(error.message || 'Falha ao validar o cartao na Stripe.');
-      }
 
       const endpoint = needsReactivation ? '/subscriptions/reactivate' : '/subscriptions/change-plan';
       const method = needsReactivation ? api.post : api.put;
       const response = await method(endpoint, {
-        paymentMethodId: setupIntent.payment_method,
-        setupIntentId: setupIntent.id || setupIntentIdRef.current,
+        paymentMethodId,
+        setupIntentId,
         plan: selectedPlan,
       });
 
@@ -201,7 +103,7 @@ export default function Subscription() {
     } finally {
       setSubmitting(false);
     }
-  }, [selectedPlan, cardHolder, stripeReady, stripeLoadError, cardError, cardComplete, user, needsReactivation, updateSubscriptionStatus, navigate]);
+  }, [selectedPlan, cardHolder, stripeReady, stripeLoadError, cardError, cardComplete, needsReactivation, updateSubscriptionStatus, navigate, confirmCardSetup]);
 
   const handleCancel = async () => {
     if (!window.confirm('Tem certeza que deseja cancelar sua assinatura?')) return;

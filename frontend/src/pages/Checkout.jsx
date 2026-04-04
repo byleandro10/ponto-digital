@@ -1,9 +1,9 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { FiClock, FiCheck, FiArrowLeft, FiArrowRight, FiLock, FiShield, FiCreditCard } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import api from '../services/api';
-import { getStripe } from '../utils/stripe';
+import { useStripeCardSetup } from '../hooks/useStripeCardSetup';
 
 const PLANS = {
   basic: {
@@ -27,25 +27,6 @@ const PLANS = {
     price: 199,
     employees: 'Funcionarios ilimitados',
     features: ['Tudo do Profissional', 'API de integracao', 'Multiunidades', 'Relatorios avancados', 'Gerente de conta dedicado', 'SLA 99,9%'],
-  },
-};
-
-const CARD_ELEMENT_OPTIONS = {
-  hidePostalCode: true,
-  style: {
-    base: {
-      fontSize: '16px',
-      color: '#111827',
-      fontFamily: 'system-ui, sans-serif',
-      lineHeight: '24px',
-      '::placeholder': {
-        color: '#9ca3af',
-      },
-    },
-    invalid: {
-      color: '#dc2626',
-      iconColor: '#dc2626',
-    },
   },
 };
 
@@ -95,88 +76,26 @@ export default function Checkout() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [cardHolder, setCardHolder] = useState('');
-  const [stripeReady, setStripeReady] = useState(false);
-  const [stripeLoading, setStripeLoading] = useState(false);
-  const [stripeLoadError, setStripeLoadError] = useState('');
-  const [cardError, setCardError] = useState('');
-  const [cardComplete, setCardComplete] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  const cardElementContainerRef = useRef(null);
-  const stripeRef = useRef(null);
-  const elementsRef = useRef(null);
-  const cardElementRef = useRef(null);
-  const setupIntentIdRef = useRef(null);
 
   const selectedPlanData = useMemo(
     () => Object.values(PLANS).find((item) => item.key === selectedPlan),
     [selectedPlan]
   );
 
-  const mountCardElement = useCallback(async () => {
-    if (!cardElementContainerRef.current) {
-      return;
-    }
-
-    setStripeLoading(true);
-    setStripeLoadError('');
-    setCardError('');
-    setCardComplete(false);
-
-    try {
-      const stripe = await getStripe();
-      if (!stripe) {
-        throw new Error('Nao foi possivel iniciar o formulario seguro da Stripe.');
-      }
-      stripeRef.current = stripe;
-
-      if (cardElementRef.current) {
-        cardElementRef.current.unmount();
-        cardElementRef.current = null;
-      }
-
-      elementsRef.current = stripe.elements();
-
-      const cardElement = elementsRef.current.create('card', CARD_ELEMENT_OPTIONS);
-      cardElement.on('change', (event) => {
-        setCardError(event.error?.message || '');
-        setCardComplete(Boolean(event.complete));
-        setStripeReady(Boolean(event.complete));
-      });
-      cardElement.mount(cardElementContainerRef.current);
-      cardElementRef.current = cardElement;
-    } catch (error) {
-      setStripeLoadError(error.response?.data?.error || error.message || 'Nao foi possivel carregar o formulario seguro da Stripe.');
-    } finally {
-      setStripeLoading(false);
-    }
-  }, [email]);
-
-  useEffect(() => {
-    if (step < 3 || !cardElementContainerRef.current) {
-      return undefined;
-    }
-
-    let active = true;
-
-    (async () => {
-      if (!active) return;
-      await mountCardElement();
-    })();
-
-    return () => {
-      active = false;
-      setStripeReady(false);
-      setCardError('');
-      setCardComplete(false);
-      setStripeLoadError('');
-      if (cardElementRef.current) {
-        cardElementRef.current.unmount();
-        cardElementRef.current = null;
-      }
-      elementsRef.current = null;
-    };
-  }, [step, mountCardElement]);
+  const {
+    containerRef: cardElementContainerRef,
+    stripeReady,
+    stripeLoading,
+    stripeLoadError: stripeCardLoadError,
+    cardError,
+    cardComplete,
+    mount: mountCardElement,
+    confirmCardSetup,
+  } = useStripeCardSetup({
+    enabled: step >= 3,
+    email,
+  });
 
   const validateStep2 = () => {
     if (!companyName || companyName.length < 3) { toast.error('O nome da empresa deve ter pelo menos 3 caracteres.'); return false; }
@@ -192,9 +111,9 @@ export default function Checkout() {
 
   const validateStep3 = () => {
     if (!cardHolder || cardHolder.length < 3) { toast.error('O nome do titular e obrigatorio.'); return false; }
-    if (stripeLoadError) { toast.error(stripeLoadError); return false; }
+    if (stripeCardLoadError) { toast.error(stripeCardLoadError); return false; }
     if (cardError) { toast.error(cardError); return false; }
-    if (!cardComplete || !stripeReady || !stripeRef.current || !cardElementRef.current) { toast.error('Preencha os dados do cartao para continuar.'); return false; }
+    if (!cardComplete || !stripeReady) { toast.error('Preencha os dados do cartao para continuar.'); return false; }
     return true;
   };
 
@@ -203,37 +122,9 @@ export default function Checkout() {
     setLoading(true);
 
     try {
-      const stripe = stripeRef.current;
-
-      if (!stripe || !cardElementRef.current) {
-        throw new Error('Nao foi possivel inicializar o pagamento seguro.');
-      }
-
-      const setupIntentRes = await api.post('/billing/setup-intent', { email });
-      const clientSecret = setupIntentRes.data?.clientSecret;
-      setupIntentIdRef.current = setupIntentRes.data?.setupIntentId || null;
-
-      if (!clientSecret) {
-        throw new Error('Nao foi possivel iniciar a validacao do cartao com a Stripe.');
-      }
-
-      const { setupIntent, error } = await stripe.confirmCardSetup(clientSecret, {
-        payment_method: {
-          card: cardElementRef.current,
-          billing_details: {
-            name: cardHolder,
-            email,
-          },
-        },
+      const { paymentMethodId, setupIntentId } = await confirmCardSetup({
+        cardHolder,
       });
-
-      if (error) {
-        throw new Error(error.message || 'Falha ao validar o cartao na Stripe.');
-      }
-
-      if (!setupIntent?.payment_method) {
-        throw new Error('A Stripe nao retornou um metodo de pagamento valido.');
-      }
 
       const registerRes = await api.post('/auth/register', {
         companyName,
@@ -242,8 +133,8 @@ export default function Checkout() {
         email,
         password,
         plan: selectedPlan.toLowerCase(),
-        paymentMethodId: setupIntent.payment_method,
-        setupIntentId: setupIntent.id || setupIntentIdRef.current,
+        paymentMethodId,
+        setupIntentId,
       });
 
       const { token, user: userData, company, subscriptionStatus, trialEndsAt } = registerRes.data;
@@ -257,7 +148,7 @@ export default function Checkout() {
     } finally {
       setLoading(false);
     }
-  }, [companyName, cnpj, name, email, password, selectedPlan, cardHolder, cardError, stripeReady, cardComplete]);
+  }, [companyName, cnpj, name, email, password, selectedPlan, cardHolder, confirmCardSetup]);
 
   const firstChargeDate = new Date();
   firstChargeDate.setDate(firstChargeDate.getDate() + 30);
@@ -360,9 +251,9 @@ export default function Checkout() {
                   {stripeLoading && <p className="text-sm text-gray-500">Carregando formulario seguro da Stripe...</p>}
                   <div ref={cardElementContainerRef} className={stripeLoading ? 'opacity-0 h-0 overflow-hidden' : ''} />
                 </div>
-                {stripeLoadError && <p className="text-sm text-red-600 mt-2">{stripeLoadError}</p>}
+                {stripeCardLoadError && <p className="text-sm text-red-600 mt-2">{stripeCardLoadError}</p>}
                 {cardError && <p className="text-sm text-red-600 mt-2">{cardError}</p>}
-                {!stripeLoading && !stripeLoadError && (
+                {!stripeLoading && !stripeCardLoadError && (
                   <div className="mt-2 flex items-center justify-between gap-3">
                     <p className="text-xs text-gray-500">Numero, validade e CVC sao preenchidos no campo seguro da Stripe.</p>
                     <button type="button" onClick={mountCardElement} className="text-xs font-medium text-blue-600 hover:text-blue-800">
