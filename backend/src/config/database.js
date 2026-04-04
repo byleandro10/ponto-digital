@@ -11,6 +11,7 @@ if (process.env.PRISMA_LOG_LEVEL === 'info') {
 }
 
 console.log('[database] config:', {
+  source: diagnostics.source,
   host: diagnostics.host,
   port: diagnostics.port,
   database: diagnostics.database,

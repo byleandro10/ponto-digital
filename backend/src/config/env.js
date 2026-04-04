@@ -8,10 +8,14 @@ function loadEnv() {
     return;
   }
 
-  // 1) Respeita variaveis ja injetadas pelo provedor no ambiente.
-  dotenv.config();
+  // Em producao, depender apenas das variaveis de ambiente do provedor.
+  if (process.env.NODE_ENV === 'production') {
+    loaded = true;
+    return;
+  }
 
-  // 2) Fallback para desenvolvimento local, sem sobrescrever runtime/producao.
+  // Em desenvolvimento local, fazer fallback para arquivos .env sem sobrescrever o ambiente.
+  dotenv.config();
   dotenv.config({ path: path.resolve(process.cwd(), '.env'), override: false });
   dotenv.config({ path: path.resolve(__dirname, '..', '..', '..', '.env'), override: false });
 

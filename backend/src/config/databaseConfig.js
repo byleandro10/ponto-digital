@@ -26,9 +26,9 @@ function buildDatabaseUrlFromParts(env) {
   const socketPath = env.DB_SOCKET_PATH;
   const host = socketPath ? 'localhost' : env.DB_HOST;
   const port = socketPath ? '' : (env.DB_PORT || '3306');
-  const user = env.DB_USER;
+  const user = typeof env.DB_USER === 'string' ? env.DB_USER.trim() : env.DB_USER;
   const password = env.DB_PASSWORD;
-  const database = env.DB_NAME;
+  const database = typeof env.DB_NAME === 'string' ? env.DB_NAME.trim() : env.DB_NAME;
 
   if (!host || !user || password === undefined || !database) {
     return null;
@@ -41,7 +41,8 @@ function buildDatabaseUrlFromParts(env) {
 }
 
 function getResolvedDatabaseUrl(env = process.env) {
-  const rawDatabaseUrl = env.DATABASE_URL || buildDatabaseUrlFromParts(env);
+  const databaseUrlFromParts = buildDatabaseUrlFromParts(env);
+  const rawDatabaseUrl = databaseUrlFromParts || env.DATABASE_URL;
   const databaseUrl = normalizeDatabaseUrl(rawDatabaseUrl, env);
   if (!databaseUrl) {
     throw new Error(
@@ -137,9 +138,11 @@ function getDatabaseDiagnostics(env = process.env) {
   const databaseUrl = getResolvedDatabaseUrl(env);
   const parsed = parseDatabaseUrl(databaseUrl);
   validateProductionDatabaseHost(parsed, env);
+  const source = buildDatabaseUrlFromParts(env) ? 'DB_*' : 'DATABASE_URL';
 
   return {
     databaseUrl,
+    source,
     host: parsed.query.get('socket') ? 'localhost (socket)' : parsed.host,
     port: parsed.query.get('socket') ? 'socket' : parsed.port,
     database: parsed.database,
