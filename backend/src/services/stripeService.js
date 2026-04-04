@@ -178,6 +178,61 @@ async function retrieveInvoice(invoiceId) {
   });
 }
 
+async function createCheckoutSubscriptionSession({
+  customerId,
+  customerEmail,
+  planKey,
+  trialEnd,
+  metadata = {},
+  successUrl,
+  cancelUrl,
+}) {
+  assertStripeConfigured();
+
+  const payload = {
+    mode: 'subscription',
+    payment_method_types: ['card'],
+    line_items: [{ price_data: getPriceData(planKey), quantity: 1 }],
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    client_reference_id: metadata.companyId || undefined,
+    metadata,
+    subscription_data: {
+      metadata,
+      payment_settings: {
+        save_default_payment_method: 'on_subscription',
+      },
+    },
+  };
+
+  if (customerId) {
+    payload.customer = customerId;
+  } else if (customerEmail) {
+    payload.customer_email = customerEmail;
+  }
+
+  if (trialEnd) {
+    payload.subscription_data.trial_end = Math.floor(new Date(trialEnd).getTime() / 1000);
+  }
+
+  return stripe.checkout.sessions.create(payload);
+}
+
+async function retrieveCheckoutSession(sessionId) {
+  assertStripeConfigured();
+  return stripe.checkout.sessions.retrieve(sessionId, {
+    expand: ['customer', 'subscription', 'subscription.latest_invoice.payment_intent'],
+  });
+}
+
+async function createBillingPortalSession({ customerId, returnUrl }) {
+  assertStripeConfigured();
+  return stripe.billingPortal.sessions.create({
+    customer: customerId,
+    return_url: returnUrl,
+  });
+}
+
 function constructWebhookEvent(payload, signature, secret) {
   assertStripeConfigured();
   return stripe.webhooks.constructEvent(payload, signature, secret);
@@ -196,6 +251,9 @@ module.exports = {
   cancelSubscription,
   retrieveSubscription,
   retrieveInvoice,
+  createCheckoutSubscriptionSession,
+  retrieveCheckoutSession,
+  createBillingPortalSession,
   constructWebhookEvent,
   toStripeAmount,
 };

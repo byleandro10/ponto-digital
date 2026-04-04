@@ -49,41 +49,37 @@ async function register(req, res) {
     paymentMethodId = sanitize(paymentMethodId);
 
     if (!companyName || !cnpj || !name || !email || !password) {
-      return res.status(400).json({ error: 'Todos os campos são obrigatórios.' });
+      return res.status(400).json({ error: 'Todos os campos sao obrigatorios.' });
     }
 
     if (!isValidEmail(email)) {
-      return res.status(400).json({ error: 'E-mail inválido. Informe um e-mail válido (ex.: usuario@empresa.com).' });
+      return res.status(400).json({ error: 'E-mail invalido. Informe um e-mail valido (ex.: usuario@empresa.com).' });
     }
 
     if (!isValidCNPJ(cnpj)) {
-      return res.status(400).json({ error: 'CNPJ inválido. Informe um CNPJ válido com 14 dígitos.' });
+      return res.status(400).json({ error: 'CNPJ invalido. Informe um CNPJ valido com 14 digitos.' });
     }
     cnpj = formatCNPJ(cnpj);
 
     if (!isValidPassword(password)) {
-      return res.status(400).json({ error: 'A senha deve ter no mínimo 8 caracteres, com pelo menos 1 letra maiúscula, 1 letra minúscula e 1 número.' });
+      return res.status(400).json({ error: 'A senha deve ter no minimo 8 caracteres, com pelo menos 1 letra maiuscula, 1 letra minuscula e 1 numero.' });
     }
 
     if (name.length < 3) {
-      return res.status(400).json({ error: 'O nome deve ter no mínimo 3 caracteres.' });
+      return res.status(400).json({ error: 'O nome deve ter no minimo 3 caracteres.' });
     }
 
     const requiresBillingOnSignup = Boolean(plan || paymentMethodId);
-    if (requiresBillingOnSignup && !paymentMethodId) {
-      return res.status(400).json({
-        error: 'Para iniciar o trial com cobrança automática, valide o cartão pela Stripe antes de concluir o cadastro.',
-      });
-    }
+    const isHostedCheckoutFlow = Boolean(plan) && !paymentMethodId;
 
     const existingCompany = await prisma.company.findUnique({ where: { cnpj } });
     if (existingCompany) {
-      return res.status(400).json({ error: 'Este CNPJ já possui uma empresa cadastrada.' });
+      return res.status(400).json({ error: 'Este CNPJ ja possui uma empresa cadastrada.' });
     }
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      return res.status(400).json({ error: 'Este e-mail já está em uso.' });
+      return res.status(400).json({ error: 'Este e-mail ja esta em uso.' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
@@ -92,13 +88,14 @@ async function register(req, res) {
     const trialEndsAt = new Date();
     trialEndsAt.setDate(trialEndsAt.getDate() + TRIAL_DAYS);
     const now = new Date();
+    const initialStatus = isHostedCheckoutFlow ? BILLING_STATUS.EXPIRED : BILLING_STATUS.TRIAL;
 
     const company = await prisma.company.create({
       data: {
         name: companyName,
         cnpj,
         plan: plan.toLowerCase(),
-        subscriptionStatus: BILLING_STATUS.TRIAL,
+        subscriptionStatus: initialStatus,
         trialEndsAt,
         users: {
           create: { name, email, password: hashedPassword, role: 'ADMIN' },
@@ -106,7 +103,7 @@ async function register(req, res) {
         subscriptions: {
           create: {
             plan,
-            status: BILLING_STATUS.TRIAL,
+            status: initialStatus,
             trialStart: now,
             trialEndsAt,
             currentPeriodStart: now,
@@ -120,7 +117,7 @@ async function register(req, res) {
     createdCompanyId = company.id;
 
     let subscription = null;
-    if (requiresBillingOnSignup) {
+    if (requiresBillingOnSignup && !isHostedCheckoutFlow) {
       try {
         subscription = await billingService.createSubscription({
           companyId: company.id,
@@ -137,7 +134,7 @@ async function register(req, res) {
         }
 
         return res.status(422).json({
-          error: `Falha ao validar o cartão e criar a assinatura na Stripe: ${error.message}`,
+          error: `Falha ao validar o cartao e criar a assinatura na Stripe: ${error.message}`,
         });
       }
     }
@@ -146,13 +143,15 @@ async function register(req, res) {
     const token = generateToken({ id: user.id, role: user.role, companyId: company.id, type: 'admin' });
 
     res.status(201).json({
-      message: requiresBillingOnSignup
-        ? 'Empresa cadastrada e assinatura iniciada com sucesso!'
-        : 'Empresa cadastrada com sucesso!',
+      message: isHostedCheckoutFlow
+        ? 'Conta criada com sucesso. Continue no checkout seguro da Stripe para validar o cartao.'
+        : requiresBillingOnSignup
+          ? 'Empresa cadastrada e assinatura iniciada com sucesso!'
+          : 'Empresa cadastrada com sucesso!',
       token,
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
       company: { id: company.id, name: company.name, cnpj: company.cnpj, plan: company.plan },
-      subscriptionStatus: subscription?.status || BILLING_STATUS.TRIAL,
+      subscriptionStatus: subscription?.status || initialStatus,
       trialEndsAt: subscription?.trialEndsAt || trialEndsAt,
       subscription,
     });

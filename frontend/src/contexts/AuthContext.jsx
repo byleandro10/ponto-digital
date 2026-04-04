@@ -7,6 +7,17 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  function persistAuthState({ token, user: userData, company, subscriptionStatus, trialEndsAt, type = 'admin' }) {
+    if (token) {
+      localStorage.setItem('token', token);
+    }
+
+    const userObj = { ...userData, company, type, subscriptionStatus: subscriptionStatus || null, trialEndsAt: trialEndsAt || null };
+    localStorage.setItem('user', JSON.stringify(userObj));
+    setUser(userObj);
+    return userObj;
+  }
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
@@ -17,10 +28,7 @@ export function AuthProvider({ children }) {
   async function loginAdmin(email, password) {
     const response = await api.post('/auth/login/admin', { email, password });
     const { token, user: userData, company, subscriptionStatus, trialEndsAt } = response.data;
-    localStorage.setItem('token', token);
-    const userObj = { ...userData, company, type: 'admin', subscriptionStatus, trialEndsAt };
-    localStorage.setItem('user', JSON.stringify(userObj));
-    setUser(userObj);
+    persistAuthState({ token, user: userData, company, subscriptionStatus, trialEndsAt, type: 'admin' });
     return response.data;
   }
 
@@ -35,10 +43,8 @@ export function AuthProvider({ children }) {
 
   async function register(data) {
     const response = await api.post('/auth/register', data);
-    const { token, user: userData, company } = response.data;
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify({ ...userData, company, type: 'admin' }));
-    setUser({ ...userData, company, type: 'admin' });
+    const { token, user: userData, company, subscriptionStatus, trialEndsAt } = response.data;
+    persistAuthState({ token, user: userData, company, subscriptionStatus, trialEndsAt, type: 'admin' });
     return response.data;
   }
 
@@ -69,7 +75,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signed: !!user, loginAdmin, loginEmployee, register, logout, updateCompanyLogo, updateSubscriptionStatus }}>
+    <AuthContext.Provider value={{ user, loading, signed: !!user, loginAdmin, loginEmployee, register, logout, updateCompanyLogo, updateSubscriptionStatus, persistAuthState }}>
       {children}
     </AuthContext.Provider>
   );

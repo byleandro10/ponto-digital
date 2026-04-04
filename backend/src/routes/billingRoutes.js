@@ -12,6 +12,9 @@ const {
   createPreapproval,
   getStatus,
   cancelSubscription,
+  createCheckoutSession,
+  completeCheckoutSession,
+  createPortalSession,
 } = require('../controllers/subscriptionController');
 
 const billingLimiter = rateLimit({
@@ -33,6 +36,9 @@ router.use(roleGuard('ADMIN', 'SUPER_ADMIN'));
 router.use(billingLimiter);
 
 router.post('/create-subscription', allowBodyFields(['plan', 'paymentMethodId', 'setupIntentId']), createPreapproval);
+router.post('/checkout-session', allowBodyFields(['plan']), createCheckoutSession);
+router.post('/checkout-complete', allowBodyFields(['sessionId']), completeCheckoutSession);
+router.post('/portal-session', allowBodyFields([]), createPortalSession);
 router.post('/cancel-subscription', allowBodyFields([]), cancelSubscription);
 router.get('/subscription-status', allowQueryFields([]), getStatus);
 

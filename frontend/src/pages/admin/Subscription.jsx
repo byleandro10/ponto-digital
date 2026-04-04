@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import AdminLayout from '../../components/AdminLayout';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
-import { FiCreditCard, FiCheck, FiAlertTriangle, FiDollarSign, FiShield, FiLock } from 'react-icons/fi';
+import { FiCreditCard, FiCheck, FiAlertTriangle, FiDollarSign, FiShield, FiExternalLink, FiRefreshCw } from 'react-icons/fi';
 import { useAuth } from '../../contexts/AuthContext';
-import { useStripeCardSetup } from '../../hooks/useStripeCardSetup';
 
 const PLAN_NAMES = { BASIC: 'Basico', PROFESSIONAL: 'Profissional', ENTERPRISE: 'Empresarial' };
 const PLAN_PRICES = { BASIC: 49, PROFESSIONAL: 99, ENTERPRISE: 199 };
@@ -16,16 +15,16 @@ const PLANS = [
 ];
 
 export default function Subscription() {
-  const { user, updateSubscriptionStatus } = useAuth();
+  const { user, updateSubscriptionStatus, persistAuthState } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [subscription, setSubscription] = useState(null);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [showCardForm, setShowCardForm] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState('BASIC');
-  const [cardHolder, setCardHolder] = useState('');
-  const [submitting, setSubmitting] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -37,73 +36,99 @@ export default function Subscription() {
       const sub = statusRes.data.subscription;
       setSubscription(sub);
       setPayments(paymentsRes.data.payments || []);
-      if (!sub || ['CANCELLED', 'EXPIRED', 'PAST_DUE'].includes(sub?.status) || (sub?.status === 'TRIAL' && sub?.trialEndsAt && new Date(sub.trialEndsAt) < new Date())) {
-        setShowCardForm(true);
-      }
       setSelectedPlan(sub?.plan || 'BASIC');
     } catch {
       toast.error('Erro ao carregar dados da assinatura.');
-      setShowCardForm(true);
     } finally {
       setLoading(false);
     }
   }, []);
 
+  const finalizeHostedCheckout = useCallback(async (sessionId) => {
+    setCheckoutLoading(true);
+    try {
+      const response = await api.post('/subscriptions/checkout-complete', { sessionId });
+      const nextSubscription = response.data.subscription;
+      setSubscription(nextSubscription);
+      updateSubscriptionStatus(nextSubscription.status, nextSubscription.trialEndsAt || null);
+      persistAuthState({
+        user,
+        company: { ...user.company, plan: nextSubscription.plan.toLowerCase() },
+        subscriptionStatus: nextSubscription.status,
+        trialEndsAt: nextSubscription.trialEndsAt || null,
+        type: 'admin',
+      });
+      toast.success('Assinatura confirmada com sucesso.');
+      setSearchParams({});
+      await fetchData();
+      navigate('/admin/dashboard');
+    } catch (error) {
+      toast.error(error.response?.data?.error || error.message || 'Nao foi possivel confirmar a assinatura.');
+      setSearchParams({});
+    } finally {
+      setCheckoutLoading(false);
+    }
+  }, [fetchData, navigate, persistAuthState, searchParams, setSearchParams, updateSubscriptionStatus, user]);
+
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  const {
-    containerRef: cardContainerRef,
-    stripeReady,
-    stripeLoading,
-    stripeLoadError,
-    cardError,
-    cardComplete,
-    mount: mountCardElement,
-    confirmCardSetup,
-  } = useStripeCardSetup({
-    enabled: showCardForm,
-    email: user?.email || '',
-  });
+  useEffect(() => {
+    const checkoutState = searchParams.get('checkout');
+    const sessionId = searchParams.get('session_id');
+
+    if (checkoutState === 'success' && sessionId) {
+      finalizeHostedCheckout(sessionId);
+      return;
+    }
+
+    if (checkoutState === 'cancelled') {
+      toast.error('Checkout cancelado. Quando quiser, inicie novamente.');
+      setSearchParams({});
+    }
+  }, [finalizeHostedCheckout, searchParams, setSearchParams]);
 
   const needsReactivation = !subscription ||
     ['CANCELLED', 'EXPIRED', 'PAST_DUE'].includes(subscription?.status) ||
     (subscription?.status === 'TRIAL' && subscription?.trialEndsAt && new Date(subscription.trialEndsAt) < new Date());
 
-  const handleSubmit = useCallback(async () => {
-    if (!selectedPlan) { toast.error('Selecione um plano.'); return; }
-    if (!cardHolder || cardHolder.length < 3) { toast.error('O nome do titular e obrigatorio.'); return; }
-    if (stripeLoadError) { toast.error(stripeLoadError); return; }
-    if (cardError) { toast.error(cardError); return; }
-    if (!cardComplete || !stripeReady) { toast.error('Preencha os dados do cartao para continuar.'); return; }
+  const handleOpenCheckout = useCallback(async () => {
+    if (!selectedPlan) {
+      toast.error('Selecione um plano.');
+      return;
+    }
 
-    setSubmitting(true);
+    setCheckoutLoading(true);
     try {
-      const { paymentMethodId, setupIntentId } = await confirmCardSetup({
-        cardHolder,
-      });
-
-      const endpoint = needsReactivation ? '/subscriptions/reactivate' : '/subscriptions/change-plan';
-      const method = needsReactivation ? api.post : api.put;
-      const response = await method(endpoint, {
-        paymentMethodId,
-        setupIntentId,
+      const response = await api.post('/subscriptions/checkout-session', {
         plan: selectedPlan,
       });
-
-      const nextSubscription = response.data.subscription;
-      setSubscription(nextSubscription);
-      updateSubscriptionStatus(nextSubscription.status, nextSubscription.trialEndsAt || null);
-      setShowCardForm(false);
-      toast.success(needsReactivation ? 'Assinatura ativada com sucesso!' : 'Plano e cartao atualizados com sucesso!');
-      navigate('/admin/dashboard');
+      const checkoutUrl = response.data?.url;
+      if (!checkoutUrl) {
+        throw new Error('A Stripe nao retornou a URL do checkout.');
+      }
+      window.location.href = checkoutUrl;
     } catch (error) {
-      toast.error(error.response?.data?.error || error.message || 'Erro ao processar pagamento.');
-    } finally {
-      setSubmitting(false);
+      toast.error(error.response?.data?.error || error.message || 'Nao foi possivel abrir o checkout da Stripe.');
+      setCheckoutLoading(false);
     }
-  }, [selectedPlan, cardHolder, stripeReady, stripeLoadError, cardError, cardComplete, needsReactivation, updateSubscriptionStatus, navigate, confirmCardSetup]);
+  }, [selectedPlan]);
+
+  const handleOpenPortal = useCallback(async () => {
+    setPortalLoading(true);
+    try {
+      const response = await api.post('/subscriptions/portal-session');
+      const portalUrl = response.data?.url;
+      if (!portalUrl) {
+        throw new Error('A Stripe nao retornou a URL do portal.');
+      }
+      window.location.href = portalUrl;
+    } catch (error) {
+      toast.error(error.response?.data?.error || error.message || 'Nao foi possivel abrir o portal da Stripe.');
+      setPortalLoading(false);
+    }
+  }, []);
 
   const handleCancel = async () => {
     if (!window.confirm('Tem certeza que deseja cancelar sua assinatura?')) return;
@@ -137,13 +162,23 @@ export default function Subscription() {
   return (
     <AdminLayout title="Assinatura">
       <div className="p-4 lg:p-6 max-w-4xl mx-auto space-y-6">
-        {needsReactivation && (
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
+        {(needsReactivation || checkoutLoading) && (
+          <div className={`${needsReactivation ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'} border rounded-2xl p-6`}>
             <div className="flex items-start gap-3">
-              <FiAlertTriangle className="w-6 h-6 text-red-500 mt-0.5 shrink-0" />
+              {needsReactivation ? (
+                <FiAlertTriangle className="w-6 h-6 text-red-500 mt-0.5 shrink-0" />
+              ) : (
+                <FiRefreshCw className="w-6 h-6 text-blue-600 mt-0.5 shrink-0" />
+              )}
               <div>
-                <h3 className="text-lg font-bold text-red-800">Assinatura inativa</h3>
-                <p className="text-sm text-red-600 mt-1">Cadastre um cartao na Stripe para reativar o acesso ao sistema.</p>
+                <h3 className={`text-lg font-bold ${needsReactivation ? 'text-red-800' : 'text-blue-800'}`}>
+                  {needsReactivation ? 'Assinatura inativa' : 'Confirmando checkout'}
+                </h3>
+                <p className={`text-sm mt-1 ${needsReactivation ? 'text-red-600' : 'text-blue-700'}`}>
+                  {checkoutLoading
+                    ? 'A Stripe esta finalizando ou abrindo o checkout seguro para o seu cartao.'
+                    : 'Use o checkout hospedado da Stripe para cadastrar ou atualizar o cartao sem depender de campos embutidos no app.'}
+                </p>
               </div>
             </div>
           </div>
@@ -172,9 +207,9 @@ export default function Subscription() {
                 <p className="text-lg font-bold text-gray-900">{subscription.status}</p>
               </div>
             </div>
-            <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100">
-              <button onClick={() => setShowCardForm(true)} className="text-sm text-blue-600 hover:text-blue-800 transition font-medium">
-                Alterar cartao / plano
+            <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100 flex-wrap">
+              <button onClick={handleOpenPortal} disabled={portalLoading} className="text-sm text-blue-600 hover:text-blue-800 transition font-medium disabled:opacity-50">
+                {portalLoading ? 'Abrindo portal...' : 'Gerenciar cartao e cobranca na Stripe'}
               </button>
               <button onClick={handleCancel} disabled={cancelling} className="text-sm text-red-500 hover:text-red-700 transition disabled:opacity-50">
                 {cancelling ? 'Cancelando...' : 'Cancelar assinatura'}
@@ -183,85 +218,86 @@ export default function Subscription() {
           </div>
         )}
 
-        {showCardForm && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            <h2 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2">
-              <FiCreditCard className="text-blue-600" />
-              {needsReactivation ? 'Ativar assinatura' : 'Atualizar cartao / plano'}
-            </h2>
-            <p className="text-sm text-gray-500 mb-6">Os dados do cartao sao coletados diretamente pela Stripe.</p>
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+          <h2 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2">
+            <FiExternalLink className="text-blue-600" />
+            {needsReactivation ? 'Ativar assinatura com checkout hospedado' : 'Alterar plano com checkout hospedado'}
+          </h2>
+          <p className="text-sm text-gray-500 mb-6">
+            O cartao agora e coletado na pagina oficial da Stripe. Isso remove o campo embutido do app e reduz erros de renderizacao, 3DS e bloqueios no navegador.
+          </p>
 
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 mb-3">Selecione o plano</label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {PLANS.map((plan) => (
-                  <button
-                    key={plan.key}
-                    type="button"
-                    onClick={() => setSelectedPlan(plan.key)}
-                    className={`relative text-left p-4 rounded-xl border-2 transition-all ${selectedPlan === plan.key ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-gray-200 hover:border-blue-300 bg-white'}`}
-                  >
-                    {selectedPlan === plan.key && (
-                      <div className="absolute -top-2 -right-2 w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center">
-                        <FiCheck className="w-3 h-3 text-white" />
-                      </div>
-                    )}
-                    <p className="font-bold text-gray-900">{plan.name}</p>
-                    <p className="text-2xl font-extrabold text-blue-600 mt-1">
-                      R${plan.price}<span className="text-sm font-normal text-gray-500">/mes</span>
-                    </p>
-                    <ul className="mt-3 space-y-1">
-                      {plan.features.map((feature) => (
-                        <li key={feature} className="text-xs text-gray-600 flex items-center gap-1">
-                          <FiCheck className="w-3 h-3 text-green-500 shrink-0" /> {feature}
-                        </li>
-                      ))}
-                    </ul>
-                  </button>
-                ))}
+          <div className="mb-6">
+            <label className="block text-sm font-semibold text-gray-700 mb-3">Selecione o plano</label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {PLANS.map((plan) => (
+                <button
+                  key={plan.key}
+                  type="button"
+                  onClick={() => setSelectedPlan(plan.key)}
+                  className={`relative text-left p-4 rounded-xl border-2 transition-all ${selectedPlan === plan.key ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-gray-200 hover:border-blue-300 bg-white'}`}
+                >
+                  {selectedPlan === plan.key && (
+                    <div className="absolute -top-2 -right-2 w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center">
+                      <FiCheck className="w-3 h-3 text-white" />
+                    </div>
+                  )}
+                  <p className="font-bold text-gray-900">{plan.name}</p>
+                  <p className="text-2xl font-extrabold text-blue-600 mt-1">
+                    R${plan.price}<span className="text-sm font-normal text-gray-500">/mes</span>
+                  </p>
+                  <ul className="mt-3 space-y-1">
+                    {plan.features.map((feature) => (
+                      <li key={feature} className="text-xs text-gray-600 flex items-center gap-1">
+                        <FiCheck className="w-3 h-3 text-green-500 shrink-0" /> {feature}
+                      </li>
+                    ))}
+                  </ul>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 mb-6">
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <FiShield className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-semibold text-blue-800 text-sm">Checkout oficial da Stripe</p>
+                  <p className="text-blue-700 text-xs mt-1">Cartao, CVC, autenticacao e 3D Secure acontecem diretamente na infraestrutura da Stripe.</p>
+                </div>
               </div>
             </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nome do titular</label>
-                <input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="Nome como aparece no cartao" className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Dados do cartao</label>
-                <div className="w-full px-4 py-4 rounded-lg border border-gray-300 min-h-[92px] bg-white focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition">
-                  {stripeLoading && <p className="text-sm text-gray-500">Carregando formulario seguro da Stripe...</p>}
-                  <div ref={cardContainerRef} className={stripeLoading ? 'opacity-0 h-0 overflow-hidden' : ''} />
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <FiCreditCard className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-semibold text-green-800 text-sm">Portal para manutencao</p>
+                  <p className="text-green-700 text-xs mt-1">Depois da assinatura, alteracoes de cartao e cobranca podem ser feitas no portal hospedado da Stripe.</p>
                 </div>
-                {stripeLoadError && <p className="text-sm text-red-600 mt-2">{stripeLoadError}</p>}
-                {cardError && <p className="text-sm text-red-600 mt-2">{cardError}</p>}
-                {!stripeLoading && !stripeLoadError && (
-                  <div className="mt-2 flex items-center justify-between gap-3">
-                    <p className="text-xs text-gray-500">Digite o numero do cartao, validade e CVC no campo seguro da Stripe.</p>
-                    <button type="button" onClick={mountCardElement} className="text-xs font-medium text-blue-600 hover:text-blue-800">
-                      Recarregar formulario
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-4 text-xs text-gray-400 pt-2">
-                <span className="flex items-center gap-1"><FiLock /> Criptografia SSL</span>
-                <span className="flex items-center gap-1"><FiShield /> Stripe</span>
-                <span className="flex items-center gap-1"><FiCreditCard /> PCI Compliant</span>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={handleSubmit} disabled={submitting || stripeLoading || !stripeReady} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition disabled:opacity-50 flex items-center justify-center gap-2">
-                  {submitting ? 'Processando...' : needsReactivation ? 'Ativar assinatura' : 'Atualizar cartao / plano'}
-                </button>
-                {!needsReactivation && (
-                  <button onClick={() => setShowCardForm(false)} className="px-6 py-3 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50 transition font-medium">
-                    Cancelar
-                  </button>
-                )}
               </div>
             </div>
           </div>
-        )}
+
+          <div className="flex gap-3 flex-wrap">
+            <button
+              onClick={handleOpenCheckout}
+              disabled={checkoutLoading}
+              className="bg-blue-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-blue-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {checkoutLoading ? 'Abrindo checkout...' : needsReactivation ? 'Ativar na Stripe' : 'Trocar plano na Stripe'}
+            </button>
+            {!needsReactivation && (
+              <button
+                onClick={handleOpenPortal}
+                disabled={portalLoading}
+                className="px-6 py-3 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50 transition font-medium disabled:opacity-50"
+              >
+                {portalLoading ? 'Abrindo portal...' : 'Gerenciar cartao no portal'}
+              </button>
+            )}
+          </div>
+        </div>
 
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">

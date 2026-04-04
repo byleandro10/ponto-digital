@@ -21,6 +21,9 @@ jest.mock('../src/controllers/subscriptionController', () => ({
   getPublicBillingConfig: (req, res) => res.status(200).json({ ok: true }),
   createSetupIntent: (req, res) => res.status(201).json({ ok: true }),
   createPreapproval: (req, res) => res.status(200).json({ ok: true }),
+  createCheckoutSession: (req, res) => res.status(201).json({ ok: true }),
+  completeCheckoutSession: (req, res) => res.status(200).json({ ok: true }),
+  createPortalSession: (req, res) => res.status(201).json({ ok: true }),
   getStatus: (req, res) => res.status(200).json({ ok: true }),
   changePlan: (req, res) => res.status(200).json({ ok: true }),
   cancelSubscription: (req, res) => res.status(200).json({ ok: true }),
@@ -92,8 +95,8 @@ describe('Security route protections', () => {
     const app = buildApp('/api/subscriptions', subscriptionRoutes);
 
     const response = await request(app)
-      .post('/api/subscriptions/create-preapproval')
-      .send({ plan: 'professional', paymentMethodId: 'pm_123' });
+      .post('/api/subscriptions/checkout-session')
+      .send({ plan: 'professional' });
 
     expect(response.status).toBe(401);
     expect(response.body.error).toMatch(/token/i);
@@ -103,9 +106,8 @@ describe('Security route protections', () => {
     const app = buildApp('/api/subscriptions', subscriptionRoutes);
 
     const response = await request(app)
-      .post('/api/subscriptions/create-preapproval')
-      .set('Authorization', `Bearer ${employeeToken}`)
-      .send({ plan: 'professional', paymentMethodId: 'pm_123' });
+      .post('/api/subscriptions/portal-session')
+      .set('Authorization', `Bearer ${employeeToken}`);
 
     expect(response.status).toBe(403);
     expect(response.body.error).toMatch(/permissao/i);
@@ -117,6 +119,18 @@ describe('Security route protections', () => {
     const response = await request(app)
       .post('/api/auth/login/admin')
       .send({ email: 'admin@example.com', password: 'secret123', role: 'SUPER_ADMIN' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/campos nao permitidos/i);
+  });
+
+  test('rejects unexpected hosted checkout fields', async () => {
+    const app = buildApp('/api/subscriptions', subscriptionRoutes);
+
+    const response = await request(app)
+      .post('/api/subscriptions/checkout-session')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ plan: 'professional', customerId: 'cus_forjado' });
 
     expect(response.status).toBe(400);
     expect(response.body.error).toMatch(/campos nao permitidos/i);

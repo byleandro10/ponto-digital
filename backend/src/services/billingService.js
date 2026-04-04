@@ -16,6 +16,8 @@ const MANAGED_STATUSES = [
   BILLING_STATUS.PAUSED,
 ];
 
+const frontendBaseUrl = String(process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
+
 function addDays(date, days) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
@@ -36,6 +38,11 @@ function toDateOrNull(value) {
 function safeString(value) {
   if (!value) return null;
   return String(value);
+}
+
+function buildFrontendUrl(path) {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${frontendBaseUrl}${normalizedPath}`;
 }
 
 function getLatestPriceId(stripeSubscription) {
@@ -322,6 +329,23 @@ async function ensurePaymentMethodAttached({ customerId, paymentMethodId }) {
   return paymentMethod;
 }
 
+function getCheckoutTrialEnd(company, subscription, now = new Date()) {
+  const existingTrial = getTrialState(company, subscription, now);
+  if (existingTrial.isTrialActive) {
+    return existingTrial.trialEndsAt;
+  }
+
+  const reservedTrialEndsAt = company.trialEndsAt && new Date(company.trialEndsAt) > now
+    ? new Date(company.trialEndsAt)
+    : null;
+
+  if (reservedTrialEndsAt && !subscription?.stripeSubscriptionId && !subscription?.mpPreapprovalId) {
+    return reservedTrialEndsAt;
+  }
+
+  return null;
+}
+
 async function createSubscription({ companyId, userId, plan, paymentMethodId, setupIntentId = null }) {
   const planKey = normalizePlanKey(plan);
   assertPaymentMethod(paymentMethodId);
@@ -466,6 +490,134 @@ async function reactivateSubscription({ companyId, userId, paymentMethodId, plan
     message: `Assinatura reativada com sucesso no plano ${PLAN_NAMES[planKey]}.`,
     subscription: nextSubscription,
   };
+}
+
+async function createCheckoutSession({ companyId, userId, plan }) {
+  const planKey = normalizePlanKey(plan);
+  const [company, latestSubscription, billingUser] = await Promise.all([
+    getCompany(companyId),
+    getLatestSubscription(companyId),
+    getBillingUser({ companyId, userId }),
+  ]);
+
+  if (
+    latestSubscription?.stripeSubscriptionId
+    && MANAGED_STATUSES.includes(latestSubscription.status)
+    && latestSubscription.plan === planKey
+  ) {
+    throw new BillingError('A empresa ja possui uma assinatura ativa para este plano.', 409);
+  }
+
+  const localSubscription = await ensureLocalSubscriptionRecord({
+    companyId,
+    plan: planKey,
+    latestSubscription,
+    trialEndsAt: getCheckoutTrialEnd(company, latestSubscription),
+    createNew: Boolean(latestSubscription?.stripeSubscriptionId || latestSubscription?.mpPreapprovalId),
+  });
+
+  const existingCustomerId = latestSubscription?.stripeCustomerId || latestSubscription?.mpCustomerId || null;
+  const customerId = existingCustomerId || await createOrReuseCustomer({ company, billingUser, latestSubscription });
+  const trialEnd = getCheckoutTrialEnd(company, latestSubscription);
+
+  try {
+    const session = await stripeService.createCheckoutSubscriptionSession({
+      customerId,
+      customerEmail: billingUser.email,
+      planKey,
+      trialEnd,
+      metadata: {
+        companyId,
+        localSubscriptionId: localSubscription.id,
+        plan: planKey,
+        initiatedByUserId: userId,
+      },
+      successUrl: buildFrontendUrl('/admin/subscription?checkout=success&session_id={CHECKOUT_SESSION_ID}'),
+      cancelUrl: buildFrontendUrl('/admin/subscription?checkout=cancelled'),
+    });
+
+    await syncSubscriptionAndCompany(localSubscription.id, companyId, {
+      plan: planKey,
+      stripeCustomerId: customerId,
+    });
+
+    return {
+      sessionId: session.id,
+      url: session.url,
+    };
+  } catch (error) {
+    throw new BillingError(`Falha ao iniciar o checkout hospedado da Stripe: ${error.message}`, 422);
+  }
+}
+
+async function completeCheckoutSession({ companyId, sessionId }) {
+  if (!sessionId) {
+    throw new BillingError('Sessao do checkout da Stripe nao informada.', 400);
+  }
+
+  let session;
+  try {
+    session = await stripeService.retrieveCheckoutSession(sessionId);
+  } catch (error) {
+    throw new BillingError(`Falha ao consultar o checkout da Stripe: ${error.message}`, 422);
+  }
+
+  const sessionCompanyId = safeString(session.metadata?.companyId || session.client_reference_id || null);
+  if (!sessionCompanyId || sessionCompanyId !== String(companyId)) {
+    throw new BillingError('Esta sessao de checkout nao pertence a empresa autenticada.', 403);
+  }
+
+  if (session.mode !== 'subscription' || !session.subscription) {
+    throw new BillingError('Sessao de checkout invalida para assinatura.', 422);
+  }
+
+  const stripeSubscription = session.subscription;
+  const stripeCustomerId = safeString(session.customer?.id || session.customer || null);
+  const localSubscription = await findSubscriptionByStripeReferences({
+    stripeSubscriptionId: stripeSubscription.id,
+    localSubscriptionId: session.metadata?.localSubscriptionId,
+    companyId,
+    stripeCustomerId,
+  });
+
+  if (!localSubscription) {
+    throw new BillingError('Assinatura local nao encontrada para finalizar o checkout.', 404);
+  }
+
+  await syncSubscriptionAndCompany(localSubscription.id, companyId, {
+    stripeCustomerId,
+  });
+
+  await handleStripeSubscriptionEvent(stripeSubscription);
+
+  const refreshedSubscription = await getLatestSubscription(companyId);
+  if (!refreshedSubscription) {
+    throw new BillingError('Nao foi possivel sincronizar a assinatura apos o checkout.', 500);
+  }
+
+  return formatSubscriptionResponse(refreshedSubscription);
+}
+
+async function createPortalSession(companyId) {
+  const subscription = await getLatestSubscription(companyId);
+  const stripeCustomerId = subscription?.stripeCustomerId || subscription?.mpCustomerId || null;
+
+  if (!stripeCustomerId) {
+    throw new BillingError('Nenhum cliente Stripe encontrado para esta empresa.', 404);
+  }
+
+  try {
+    const session = await stripeService.createBillingPortalSession({
+      customerId: stripeCustomerId,
+      returnUrl: buildFrontendUrl('/admin/subscription'),
+    });
+
+    return {
+      url: session.url,
+    };
+  } catch (error) {
+    throw new BillingError(`Falha ao abrir o portal de cobranca da Stripe: ${error.message}`, 422);
+  }
 }
 
 async function cancelSubscription(companyId) {
@@ -878,6 +1030,9 @@ module.exports = {
   handleStripePaymentMethodAttached,
   changePlan,
   reactivateSubscription,
+  createCheckoutSession,
+  completeCheckoutSession,
+  createPortalSession,
   reconcileCompanyBillingState,
   reconcileAllSubscriptions,
   BillingError,
