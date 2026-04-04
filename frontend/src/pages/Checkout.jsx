@@ -30,26 +30,22 @@ const PLANS = {
   },
 };
 
-const PAYMENT_ELEMENT_OPTIONS = {
-  layout: 'tabs',
-  fields: {
-    billingDetails: {
-      address: {
-        country: 'never',
-        postalCode: 'never',
+const CARD_ELEMENT_OPTIONS = {
+  hidePostalCode: true,
+  style: {
+    base: {
+      fontSize: '16px',
+      color: '#111827',
+      fontFamily: 'system-ui, sans-serif',
+      lineHeight: '24px',
+      '::placeholder': {
+        color: '#9ca3af',
       },
     },
-  },
-};
-
-const ELEMENTS_APPEARANCE = {
-  theme: 'stripe',
-  variables: {
-    colorPrimary: '#2563eb',
-    colorText: '#111827',
-    colorDanger: '#dc2626',
-    fontFamily: 'system-ui, sans-serif',
-    borderRadius: '12px',
+    invalid: {
+      color: '#dc2626',
+      iconColor: '#dc2626',
+    },
   },
 };
 
@@ -102,13 +98,14 @@ export default function Checkout() {
   const [stripeReady, setStripeReady] = useState(false);
   const [stripeLoading, setStripeLoading] = useState(false);
   const [stripeLoadError, setStripeLoadError] = useState('');
-  const [paymentError, setPaymentError] = useState('');
+  const [cardError, setCardError] = useState('');
+  const [cardComplete, setCardComplete] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const paymentElementContainerRef = useRef(null);
+  const cardElementContainerRef = useRef(null);
   const stripeRef = useRef(null);
   const elementsRef = useRef(null);
-  const paymentElementRef = useRef(null);
+  const cardElementRef = useRef(null);
   const setupIntentIdRef = useRef(null);
 
   const selectedPlanData = useMemo(
@@ -116,14 +113,15 @@ export default function Checkout() {
     [selectedPlan]
   );
 
-  const mountPaymentElement = useCallback(async () => {
-    if (!paymentElementContainerRef.current) {
+  const mountCardElement = useCallback(async () => {
+    if (!cardElementContainerRef.current) {
       return;
     }
 
     setStripeLoading(true);
     setStripeLoadError('');
-    setPaymentError('');
+    setCardError('');
+    setCardComplete(false);
 
     try {
       const [{ data }, stripe] = await Promise.all([
@@ -138,23 +136,21 @@ export default function Checkout() {
       stripeRef.current = stripe;
       setupIntentIdRef.current = data.setupIntentId;
 
-      if (paymentElementRef.current) {
-        paymentElementRef.current.unmount();
-        paymentElementRef.current = null;
+      if (cardElementRef.current) {
+        cardElementRef.current.unmount();
+        cardElementRef.current = null;
       }
 
-      elementsRef.current = stripe.elements({
-        clientSecret: data.clientSecret,
-        appearance: ELEMENTS_APPEARANCE,
-      });
+      elementsRef.current = stripe.elements();
 
-      const paymentElement = elementsRef.current.create('payment', PAYMENT_ELEMENT_OPTIONS);
-      paymentElement.on('change', (event) => {
-        setPaymentError(event.error?.message || '');
+      const cardElement = elementsRef.current.create('card', CARD_ELEMENT_OPTIONS);
+      cardElement.on('change', (event) => {
+        setCardError(event.error?.message || '');
+        setCardComplete(Boolean(event.complete));
         setStripeReady(Boolean(event.complete));
       });
-      paymentElement.mount(paymentElementContainerRef.current);
-      paymentElementRef.current = paymentElement;
+      cardElement.mount(cardElementContainerRef.current);
+      cardElementRef.current = cardElement;
     } catch (error) {
       setStripeLoadError(error.response?.data?.error || error.message || 'Nao foi possivel carregar o formulario seguro da Stripe.');
     } finally {
@@ -163,7 +159,7 @@ export default function Checkout() {
   }, [email]);
 
   useEffect(() => {
-    if (step < 3 || !paymentElementContainerRef.current) {
+    if (step < 3 || !cardElementContainerRef.current) {
       return undefined;
     }
 
@@ -171,21 +167,22 @@ export default function Checkout() {
 
     (async () => {
       if (!active) return;
-      await mountPaymentElement();
+      await mountCardElement();
     })();
 
     return () => {
       active = false;
       setStripeReady(false);
-      setPaymentError('');
+      setCardError('');
+      setCardComplete(false);
       setStripeLoadError('');
-      if (paymentElementRef.current) {
-        paymentElementRef.current.unmount();
-        paymentElementRef.current = null;
+      if (cardElementRef.current) {
+        cardElementRef.current.unmount();
+        cardElementRef.current = null;
       }
       elementsRef.current = null;
     };
-  }, [step, mountPaymentElement]);
+  }, [step, mountCardElement]);
 
   const validateStep2 = () => {
     if (!companyName || companyName.length < 3) { toast.error('O nome da empresa deve ter pelo menos 3 caracteres.'); return false; }
@@ -202,8 +199,8 @@ export default function Checkout() {
   const validateStep3 = () => {
     if (!cardHolder || cardHolder.length < 3) { toast.error('O nome do titular e obrigatorio.'); return false; }
     if (stripeLoadError) { toast.error(stripeLoadError); return false; }
-    if (paymentError) { toast.error(paymentError); return false; }
-    if (!stripeReady || !stripeRef.current || !elementsRef.current) { toast.error('Preencha os dados do cartao para continuar.'); return false; }
+    if (cardError) { toast.error(cardError); return false; }
+    if (!cardComplete || !stripeReady || !stripeRef.current || !cardElementRef.current) { toast.error('Preencha os dados do cartao para continuar.'); return false; }
     return true;
   };
 
@@ -213,26 +210,17 @@ export default function Checkout() {
 
     try {
       const stripe = stripeRef.current;
-      const elements = elementsRef.current;
 
-      if (!stripe || !elements) {
+      if (!stripe || !cardElementRef.current) {
         throw new Error('Nao foi possivel inicializar o pagamento seguro.');
       }
 
-      const submitResult = await elements.submit();
-      if (submitResult?.error) {
-        throw new Error(submitResult.error.message || 'Revise os dados do cartao antes de continuar.');
-      }
-
-      const { setupIntent, error } = await stripe.confirmSetup({
-        elements,
-        redirect: 'if_required',
-        confirmParams: {
-          payment_method_data: {
-            billing_details: {
-              name: cardHolder,
-              email,
-            },
+      const { setupIntent, error } = await stripe.confirmCardSetup(setupIntentIdRef.current, {
+        payment_method: {
+          card: cardElementRef.current,
+          billing_details: {
+            name: cardHolder,
+            email,
           },
         },
       });
@@ -267,7 +255,7 @@ export default function Checkout() {
     } finally {
       setLoading(false);
     }
-  }, [companyName, cnpj, name, email, password, selectedPlan, cardHolder, paymentError, stripeReady]);
+  }, [companyName, cnpj, name, email, password, selectedPlan, cardHolder, cardError, stripeReady, cardComplete]);
 
   const firstChargeDate = new Date();
   firstChargeDate.setDate(firstChargeDate.getDate() + 30);
@@ -366,12 +354,20 @@ export default function Checkout() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Dados do cartao</label>
-                <div className="w-full border border-gray-300 rounded-xl px-4 py-4 bg-white min-h-[92px]">
+                <div className="w-full border border-gray-300 rounded-xl px-4 py-4 bg-white min-h-[92px] focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition">
                   {stripeLoading && <p className="text-sm text-gray-500">Carregando formulario seguro da Stripe...</p>}
-                  <div ref={paymentElementContainerRef} className={stripeLoading ? 'opacity-0 h-0 overflow-hidden' : ''} />
+                  <div ref={cardElementContainerRef} className={stripeLoading ? 'opacity-0 h-0 overflow-hidden' : ''} />
                 </div>
                 {stripeLoadError && <p className="text-sm text-red-600 mt-2">{stripeLoadError}</p>}
-                {paymentError && <p className="text-sm text-red-600 mt-2">{paymentError}</p>}
+                {cardError && <p className="text-sm text-red-600 mt-2">{cardError}</p>}
+                {!stripeLoading && !stripeLoadError && (
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <p className="text-xs text-gray-500">Numero, validade e CVC sao preenchidos no campo seguro da Stripe.</p>
+                    <button type="button" onClick={mountCardElement} className="text-xs font-medium text-blue-600 hover:text-blue-800">
+                      Recarregar formulario
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex justify-between mt-8">
