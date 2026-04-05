@@ -15,9 +15,12 @@ const {
   getPlanConfig,
 } = require('../config/billingConfig');
 
-function isMissingBillingColumnError(error) {
-  const message = String(error?.message || error?.meta?.message || '');
-  return error?.code === 'P2022' || /unknown column|does not exist/i.test(message);
+function isLegacyBillingSchemaError(error) {
+  const message = String(error?.message || error?.meta?.message || '').toLowerCase();
+  return (
+    error?.code === 'P2022'
+    || /unknown column|does not exist|table .* doesn't exist/i.test(message)
+  );
 }
 
 function buildCompanyRegistrationCreateInput({
@@ -27,13 +30,16 @@ function buildCompanyRegistrationCreateInput({
   name,
   email,
   hashedPassword,
+  includeCompanySubscriptionStatus = true,
   includeHostedBillingFields = true,
+  includeLocalSubscription = true,
+  includeSubscriptionStatus = true,
+  includeSubscriptionHostedBillingFields = true,
 }) {
   const companyData = {
     name: companyName,
     cnpj,
     plan: getPlanConfig(plan).slug,
-    subscriptionStatus: SUBSCRIPTION_STATUS.INCOMPLETE,
     users: {
       create: {
         name,
@@ -42,47 +48,98 @@ function buildCompanyRegistrationCreateInput({
         role: 'ADMIN',
       },
     },
-    subscriptions: {
+  };
+
+  if (includeCompanySubscriptionStatus) {
+    companyData.subscriptionStatus = SUBSCRIPTION_STATUS.INCOMPLETE;
+  }
+
+  if (includeLocalSubscription) {
+    companyData.subscriptions = {
       create: {
         plan,
-        status: SUBSCRIPTION_STATUS.INCOMPLETE,
       },
-    },
-  };
+    };
+
+    if (includeSubscriptionStatus) {
+      companyData.subscriptions.create.status = SUBSCRIPTION_STATUS.INCOMPLETE;
+    }
+  }
 
   if (includeHostedBillingFields) {
     companyData.billingStatus = BILLING_STATUS.INCOMPLETE;
     companyData.cancelAtPeriodEnd = false;
+  }
+
+  if (includeLocalSubscription && includeSubscriptionHostedBillingFields) {
     companyData.subscriptions.create.billingStatus = BILLING_STATUS.INCOMPLETE;
     companyData.subscriptions.create.cancelAtPeriodEnd = false;
   }
 
   return {
     data: companyData,
-    include: { users: true },
+    select: {
+      id: true,
+      name: true,
+      cnpj: true,
+      plan: true,
+      users: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+        },
+      },
+    },
   };
 }
 
 async function createCompanyWithBillingCompatibility(payload) {
-  try {
-    return await prisma.company.create(
-      buildCompanyRegistrationCreateInput({
-        ...payload,
-        includeHostedBillingFields: true,
-      })
-    );
-  } catch (error) {
-    if (!isMissingBillingColumnError(error)) {
-      throw error;
-    }
+  const attempts = [
+    {
+      includeCompanySubscriptionStatus: true,
+      includeHostedBillingFields: true,
+      includeLocalSubscription: true,
+      includeSubscriptionStatus: true,
+      includeSubscriptionHostedBillingFields: true,
+    },
+    {
+      includeCompanySubscriptionStatus: true,
+      includeHostedBillingFields: false,
+      includeLocalSubscription: true,
+      includeSubscriptionStatus: true,
+      includeSubscriptionHostedBillingFields: false,
+    },
+    {
+      includeCompanySubscriptionStatus: true,
+      includeHostedBillingFields: false,
+      includeLocalSubscription: false,
+      includeSubscriptionStatus: false,
+      includeSubscriptionHostedBillingFields: false,
+    },
+  ];
 
-    return prisma.company.create(
-      buildCompanyRegistrationCreateInput({
-        ...payload,
-        includeHostedBillingFields: false,
-      })
-    );
+  let lastCompatibilityError = null;
+
+  for (const attempt of attempts) {
+    try {
+      return await prisma.company.create(
+        buildCompanyRegistrationCreateInput({
+          ...payload,
+          ...attempt,
+        })
+      );
+    } catch (error) {
+      if (!isLegacyBillingSchemaError(error)) {
+        throw error;
+      }
+
+      lastCompatibilityError = error;
+    }
   }
+
+  throw lastCompatibilityError;
 }
 
 async function trackLoginDirect(companyId, type) {
@@ -159,8 +216,8 @@ async function register(req, res) {
     plan = normalizePlanKey(plan, 'BASIC');
 
     const [existingCompany, existingUser] = await Promise.all([
-      prisma.company.findUnique({ where: { cnpj } }),
-      prisma.user.findUnique({ where: { email } }),
+      prisma.company.findUnique({ where: { cnpj }, select: { id: true } }),
+      prisma.user.findUnique({ where: { email }, select: { id: true } }),
     ]);
 
     if (existingCompany) {

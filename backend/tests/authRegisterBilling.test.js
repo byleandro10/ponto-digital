@@ -72,6 +72,10 @@ describe('authController register hosted billing flow', () => {
 
     await register(req, res);
 
+    expect(mockPrisma.company.findUnique).toHaveBeenCalledWith({
+      where: { cnpj: '34192212000130' },
+      select: { id: true },
+    });
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ error: 'Este CNPJ já possui uma empresa cadastrada.' });
   });
@@ -104,6 +108,12 @@ describe('authController register hosted billing flow', () => {
         subscriptionStatus: 'INCOMPLETE',
         billingStatus: 'INCOMPLETE',
         plan: 'professional',
+      }),
+      select: expect.objectContaining({
+        id: true,
+        name: true,
+        cnpj: true,
+        plan: true,
       }),
     }));
     expect(res.status).toHaveBeenCalledWith(201);
@@ -166,6 +176,50 @@ describe('authController register hosted billing flow', () => {
         cancelAtPeriodEnd: expect.anything(),
       })
     );
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  test('falls back to company-only onboarding payload when the local subscription schema is still incompatible', async () => {
+    mockPrisma.company.create
+      .mockRejectedValueOnce({
+        code: 'P2022',
+        message: 'Unknown column billingStatus in field list',
+      })
+      .mockRejectedValueOnce({
+        code: 'P2022',
+        message: 'Unknown column stripeCheckoutSessionId in field list',
+      })
+      .mockResolvedValueOnce({
+        id: 'company-1',
+        name: 'Empresa',
+        cnpj: '34.192.212/0001-30',
+        plan: 'basic',
+        users: [{ id: 'user-1', name: 'Admin Teste', email: 'novo@empresa.com', role: 'ADMIN' }],
+      });
+
+    const req = {
+      body: {
+        companyName: 'Empresa',
+        cnpj: '34192212000130',
+        name: 'Admin Teste',
+        email: 'novo@empresa.com',
+        password: 'SenhaForte123',
+        plan: 'basic',
+      },
+    };
+    const res = makeRes();
+
+    await register(req, res);
+
+    expect(mockPrisma.company.create).toHaveBeenCalledTimes(3);
+    expect(mockPrisma.company.create.mock.calls[2][0].data).toEqual(
+      expect.not.objectContaining({
+        subscriptions: expect.anything(),
+        billingStatus: expect.anything(),
+        cancelAtPeriodEnd: expect.anything(),
+      })
+    );
+    expect(mockPrisma.company.create.mock.calls[2][0].data.subscriptionStatus).toBe('INCOMPLETE');
     expect(res.status).toHaveBeenCalledWith(201);
   });
 
