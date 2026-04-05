@@ -123,6 +123,40 @@ function formatSubscriptionResponse(subscription, companyPlan) {
   };
 }
 
+function isStripeMissingCustomerError(error) {
+  const message = String(error?.message || error?.raw?.message || '').toLowerCase();
+  return error?.code === 'resource_missing' || message.includes('no such customer');
+}
+
+function translateOperationalError(error) {
+  if (error instanceof BillingError) {
+    return error;
+  }
+
+  const message = String(error?.message || error?.raw?.message || '');
+
+  if (error?.code === 'P2022' || /unknown column/i.test(message)) {
+    return new BillingError(
+      'O banco de dados do billing ainda nao foi atualizado neste ambiente. Aplique a migration mais recente antes de usar o checkout.',
+      503
+    );
+  }
+
+  if (/STRIPE_SECRET_KEY nao configurada/i.test(message)) {
+    return new BillingError('A chave secreta da Stripe nao esta configurada neste ambiente.', 503);
+  }
+
+  if (/No such price/i.test(message) || /No such product/i.test(message)) {
+    return new BillingError('A configuracao de precos da Stripe neste ambiente esta invalida.', 503);
+  }
+
+  if (/No such customer/i.test(message)) {
+    return new BillingError('O cliente da Stripe vinculado a esta empresa nao existe mais. Tente novamente para recriar o cadastro de cobranca.', 409);
+  }
+
+  return null;
+}
+
 async function getCompany(companyId) {
   const company = await prisma.company.findUnique({ where: { id: companyId } });
 
@@ -196,17 +230,23 @@ async function findSubscriptionByStripeReferences({ stripeSubscriptionId, stripe
 
 async function ensureStripeCustomer({ company, billingUser }) {
   if (company.stripeCustomerId) {
-    await stripeService.updateCustomer(company.stripeCustomerId, {
-      email: billingUser.email,
-      name: billingUser.name,
-      metadata: {
-        companyId: company.id,
-        companyName: company.name,
-        userId: billingUser.id,
-      },
-    });
+    try {
+      await stripeService.updateCustomer(company.stripeCustomerId, {
+        email: billingUser.email,
+        name: billingUser.name,
+        metadata: {
+          companyId: company.id,
+          companyName: company.name,
+          userId: billingUser.id,
+        },
+      });
 
-    return company.stripeCustomerId;
+      return company.stripeCustomerId;
+    } catch (error) {
+      if (!isStripeMissingCustomerError(error)) {
+        throw error;
+      }
+    }
   }
 
   const stripeCustomer = await stripeService.createCustomer({
@@ -359,67 +399,72 @@ async function persistStripeSubscriptionSnapshot({
   });
 }
 
-async function createCheckoutSession({ companyId, userId, plan }) {
-  const planKey = normalizePlanKey(plan);
-  const [company, billingUser, latestSubscription] = await Promise.all([
-    getCompany(companyId),
-    getBillingUser({ companyId, userId }),
-    getLatestSubscription(companyId),
-  ]);
+async function createCheckoutSession({ companyId, userId, plan, frontendBaseUrl = null }) {
+  try {
+    const planKey = normalizePlanKey(plan);
+    const [company, billingUser, latestSubscription] = await Promise.all([
+      getCompany(companyId),
+      getBillingUser({ companyId, userId }),
+      getLatestSubscription(companyId),
+    ]);
 
-  if (
-    latestSubscription?.stripeSubscriptionId
-    && ![SUBSCRIPTION_STATUS.CANCELED, SUBSCRIPTION_STATUS.INCOMPLETE_EXPIRED].includes(latestSubscription.status)
-  ) {
-    throw new BillingError('A empresa ja possui uma assinatura gerenciada pela Stripe. Use o portal para alterar a cobranca.', 409);
+    if (
+      latestSubscription?.stripeSubscriptionId
+      && ![SUBSCRIPTION_STATUS.CANCELED, SUBSCRIPTION_STATUS.INCOMPLETE_EXPIRED].includes(latestSubscription.status)
+    ) {
+      throw new BillingError('A empresa ja possui uma assinatura gerenciada pela Stripe. Use o portal para alterar a cobranca.', 409);
+    }
+
+    const stripeCustomerId = await ensureStripeCustomer({ company, billingUser });
+    const placeholderSubscription = await ensureCheckoutPlaceholderSubscription({
+      companyId,
+      planKey,
+      latestSubscription,
+    });
+
+    const checkoutSession = await stripeService.createCheckoutSession({
+      customerId: stripeCustomerId,
+      customerEmail: billingUser.email,
+      companyId,
+      userId,
+      localSubscriptionId: placeholderSubscription.id,
+      planKey,
+      frontendBaseUrl,
+    });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.subscription.update({
+        where: { id: placeholderSubscription.id },
+        data: {
+          stripeCustomerId,
+          stripeCheckoutSessionId: checkoutSession.id,
+        },
+      });
+
+      await tx.company.update({
+        where: { id: companyId },
+        data: {
+          plan: getPlanConfig(planKey).slug,
+          stripeCustomerId,
+          subscriptionStatus: SUBSCRIPTION_STATUS.INCOMPLETE,
+          billingStatus: BILLING_STATUS.INCOMPLETE,
+          stripeSubscriptionId: null,
+          stripePriceId: null,
+          trialEndsAt: null,
+          currentPeriodEnd: null,
+          cancelAtPeriodEnd: false,
+          lastInvoiceId: null,
+        },
+      });
+    });
+
+    return {
+      checkoutSessionId: checkoutSession.id,
+      checkoutUrl: checkoutSession.url,
+    };
+  } catch (error) {
+    throw translateOperationalError(error) || error;
   }
-
-  const stripeCustomerId = await ensureStripeCustomer({ company, billingUser });
-  const placeholderSubscription = await ensureCheckoutPlaceholderSubscription({
-    companyId,
-    planKey,
-    latestSubscription,
-  });
-
-  const checkoutSession = await stripeService.createCheckoutSession({
-    customerId: stripeCustomerId,
-    customerEmail: billingUser.email,
-    companyId,
-    userId,
-    localSubscriptionId: placeholderSubscription.id,
-    planKey,
-  });
-
-  await prisma.$transaction(async (tx) => {
-    await tx.subscription.update({
-      where: { id: placeholderSubscription.id },
-      data: {
-        stripeCustomerId,
-        stripeCheckoutSessionId: checkoutSession.id,
-      },
-    });
-
-    await tx.company.update({
-      where: { id: companyId },
-      data: {
-        plan: getPlanConfig(planKey).slug,
-        stripeCustomerId,
-        subscriptionStatus: SUBSCRIPTION_STATUS.INCOMPLETE,
-        billingStatus: BILLING_STATUS.INCOMPLETE,
-        stripeSubscriptionId: null,
-        stripePriceId: null,
-        trialEndsAt: null,
-        currentPeriodEnd: null,
-        cancelAtPeriodEnd: false,
-        lastInvoiceId: null,
-      },
-    });
-  });
-
-  return {
-    checkoutSessionId: checkoutSession.id,
-    checkoutUrl: checkoutSession.url,
-  };
 }
 
 async function syncCheckoutSession({ companyId, sessionId }) {
@@ -451,19 +496,24 @@ async function syncCheckoutSession({ companyId, sessionId }) {
   return formatSubscriptionResponse(savedSubscription, getPlanConfig(savedSubscription.plan).slug);
 }
 
-async function createPortalSession({ companyId }) {
-  const company = await getCompany(companyId);
-  const stripeCustomerId = company.stripeCustomerId;
+async function createPortalSession({ companyId, frontendBaseUrl = null }) {
+  try {
+    const company = await getCompany(companyId);
+    const stripeCustomerId = company.stripeCustomerId;
 
-  if (!stripeCustomerId) {
-    throw new BillingError('Nenhum cliente Stripe foi encontrado para esta empresa.', 409);
+    if (!stripeCustomerId) {
+      throw new BillingError('Nenhum cliente Stripe foi encontrado para esta empresa.', 409);
+    }
+
+    const session = await stripeService.createPortalSession({
+      customerId: stripeCustomerId,
+      frontendBaseUrl,
+    });
+
+    return { portalUrl: session.url };
+  } catch (error) {
+    throw translateOperationalError(error) || error;
   }
-
-  const session = await stripeService.createPortalSession({
-    customerId: stripeCustomerId,
-  });
-
-  return { portalUrl: session.url };
 }
 
 async function getSubscriptionStatus(companyId) {

@@ -64,6 +64,11 @@ function getStripePriceIdForPlan(plan) {
   return priceId;
 }
 
+function getOptionalStripePriceIdForPlan(plan) {
+  const planConfig = getPlanConfig(plan);
+  return process.env[planConfig.stripePriceEnv] || null;
+}
+
 function getPlanFromStripePriceId(priceId) {
   if (!priceId) return null;
 
@@ -132,6 +137,7 @@ module.exports = {
   normalizePlanKey,
   getPlanConfig,
   getStripePriceIdForPlan,
+  getOptionalStripePriceIdForPlan,
   getPlanFromStripePriceId,
   mapStripeSubscriptionStatus,
   mapSubscriptionStatusToBillingStatus,

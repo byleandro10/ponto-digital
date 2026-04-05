@@ -1,5 +1,5 @@
 const { stripe, stripeSecretKey } = require('../config/stripe');
-const { TRIAL_DAYS, getStripePriceIdForPlan } = require('../config/billingConfig');
+const { TRIAL_DAYS, getPlanConfig, getOptionalStripePriceIdForPlan } = require('../config/billingConfig');
 
 function assertStripeConfigured() {
   if (!stripe || !stripeSecretKey) {
@@ -7,14 +7,48 @@ function assertStripeConfigured() {
   }
 }
 
-function getFrontendBaseUrl() {
-  const baseUrl = process.env.FRONTEND_URL || process.env.APP_URL;
+function normalizeBaseUrl(value) {
+  if (!value) return null;
+  return String(value).replace(/\/+$/, '');
+}
+
+function getFrontendBaseUrl(fallbackBaseUrl = null) {
+  const baseUrl = process.env.FRONTEND_URL || process.env.APP_URL || fallbackBaseUrl;
 
   if (!baseUrl) {
     throw new Error('FRONTEND_URL ou APP_URL deve estar configurada para billing com Stripe.');
   }
 
-  return String(baseUrl).replace(/\/+$/, '');
+  return normalizeBaseUrl(baseUrl);
+}
+
+function buildLineItem(planKey) {
+  const priceId = getOptionalStripePriceIdForPlan(planKey);
+  if (priceId) {
+    return {
+      price: priceId,
+      quantity: 1,
+    };
+  }
+
+  const planConfig = getPlanConfig(planKey);
+
+  return {
+    price_data: {
+      currency: 'brl',
+      unit_amount: Math.round(Number(planConfig.amount) * 100),
+      recurring: {
+        interval: 'month',
+      },
+      product_data: {
+        name: `Ponto Digital - Plano ${planConfig.name}`,
+        metadata: {
+          planKey,
+        },
+      },
+    },
+    quantity: 1,
+  };
 }
 
 async function createCustomer({ email, name, companyId, companyName, userId }) {
@@ -48,11 +82,11 @@ async function createCheckoutSession({
   userId,
   localSubscriptionId,
   planKey,
+  frontendBaseUrl,
 }) {
   assertStripeConfigured();
 
-  const frontendBaseUrl = getFrontendBaseUrl();
-  const priceId = getStripePriceIdForPlan(planKey);
+  const resolvedFrontendBaseUrl = getFrontendBaseUrl(frontendBaseUrl);
 
   return stripe.checkout.sessions.create({
     mode: 'subscription',
@@ -62,12 +96,7 @@ async function createCheckoutSession({
     payment_method_collection: 'always',
     allow_promotion_codes: true,
     locale: 'auto',
-    line_items: [
-      {
-        price: priceId,
-        quantity: 1,
-      },
-    ],
+    line_items: [buildLineItem(planKey)],
     metadata: {
       companyId,
       userId,
@@ -83,8 +112,8 @@ async function createCheckoutSession({
         planKey,
       },
     },
-    success_url: `${frontendBaseUrl}/admin/subscription?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${frontendBaseUrl}/admin/subscription?checkout=cancelled`,
+    success_url: `${resolvedFrontendBaseUrl}/admin/subscription?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${resolvedFrontendBaseUrl}/admin/subscription?checkout=cancelled`,
   });
 }
 
@@ -95,15 +124,15 @@ async function retrieveCheckoutSession(sessionId) {
   });
 }
 
-async function createPortalSession({ customerId, returnPath = '/admin/subscription' }) {
+async function createPortalSession({ customerId, returnPath = '/admin/subscription', frontendBaseUrl }) {
   assertStripeConfigured();
 
-  const frontendBaseUrl = getFrontendBaseUrl();
+  const resolvedFrontendBaseUrl = getFrontendBaseUrl(frontendBaseUrl);
   const normalizedPath = returnPath.startsWith('/') ? returnPath : `/${returnPath}`;
 
   return stripe.billingPortal.sessions.create({
     customer: customerId,
-    return_url: `${frontendBaseUrl}${normalizedPath}`,
+    return_url: `${resolvedFrontendBaseUrl}${normalizedPath}`,
   });
 }
 

@@ -2,6 +2,23 @@ const billingService = require('../services/billingService');
 
 const { BillingError } = billingService;
 
+function resolveFrontendBaseUrl(req) {
+  const origin = req.headers.origin;
+  if (origin) {
+    return String(origin).replace(/\/+$/, '');
+  }
+
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const forwardedHost = req.headers['x-forwarded-host'];
+  const host = forwardedHost || req.headers.host;
+
+  if (host) {
+    return `${forwardedProto || 'https'}://${host}`.replace(/\/+$/, '');
+  }
+
+  return null;
+}
+
 function handleBillingError(res, req, message, error) {
   if (error instanceof BillingError) {
     return res.status(error.statusCode).json({
@@ -30,6 +47,7 @@ async function createCheckoutSession(req, res) {
       companyId: req.companyId,
       userId: req.userId,
       plan: req.body.plan,
+      frontendBaseUrl: resolveFrontendBaseUrl(req),
     });
 
     return res.status(201).json({
@@ -63,6 +81,7 @@ async function createPortalSession(req, res) {
   try {
     const result = await billingService.createPortalSession({
       companyId: req.companyId,
+      frontendBaseUrl: resolveFrontendBaseUrl(req),
     });
 
     return res.status(201).json({
