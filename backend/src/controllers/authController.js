@@ -160,6 +160,61 @@ async function createLocalSubscriptionIfPossible(tx, { companyId, plan }) {
   }
 }
 
+function buildCompanyAuthSelect({ includeSubscriptionFields = true } = {}) {
+  const select = {
+    id: true,
+    name: true,
+    cnpj: true,
+    plan: true,
+  };
+
+  if (includeSubscriptionFields) {
+    select.subscriptionStatus = true;
+    select.trialEndsAt = true;
+  }
+
+  return select;
+}
+
+async function getCompanyAuthSnapshot(companyId) {
+  const attempts = [
+    buildCompanyAuthSelect({ includeSubscriptionFields: true }),
+    buildCompanyAuthSelect({ includeSubscriptionFields: false }),
+  ];
+
+  let lastCompatibilityError = null;
+
+  for (const select of attempts) {
+    try {
+      const company = await prisma.company.findUnique({
+        where: { id: companyId },
+        select,
+      });
+
+      if (!company) {
+        return null;
+      }
+
+      return {
+        id: company.id,
+        name: company.name,
+        cnpj: company.cnpj,
+        plan: company.plan,
+        subscriptionStatus: company.subscriptionStatus || SUBSCRIPTION_STATUS.INCOMPLETE,
+        trialEndsAt: company.trialEndsAt || null,
+      };
+    } catch (error) {
+      if (!isLegacyBillingSchemaError(error)) {
+        throw error;
+      }
+
+      lastCompatibilityError = error;
+    }
+  }
+
+  throw lastCompatibilityError;
+}
+
 async function trackLoginDirect(companyId, type) {
   try {
     const today = new Date();
@@ -318,6 +373,7 @@ async function register(req, res) {
 
     return res.status(500).json({
       error: 'Erro ao registrar a empresa. Tente novamente.',
+      requestId: req.requestId || null,
     });
   }
 }
@@ -337,7 +393,14 @@ async function loginAdmin(req, res) {
 
     const user = await prisma.user.findUnique({
       where: { email },
-      include: { company: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        password: true,
+        role: true,
+        companyId: true,
+      },
     });
 
     if (!user) {
@@ -347,6 +410,13 @@ async function loginAdmin(req, res) {
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
       return res.status(401).json({ error: 'Credenciais inválidas.' });
+    }
+
+    const company = await getCompanyAuthSnapshot(user.companyId);
+    if (!company) {
+      return res.status(409).json({
+        error: 'Nao foi possivel carregar os dados da empresa. Entre em contato com o suporte.',
+      });
     }
 
     const token = generateToken({
@@ -362,17 +432,25 @@ async function loginAdmin(req, res) {
       token,
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
       company: {
-        id: user.company.id,
-        name: user.company.name,
-        cnpj: user.company.cnpj,
-        plan: user.company.plan,
+        id: company.id,
+        name: company.name,
+        cnpj: company.cnpj,
+        plan: company.plan,
       },
-      subscriptionStatus: user.company.subscriptionStatus || SUBSCRIPTION_STATUS.INCOMPLETE,
-      trialEndsAt: user.company.trialEndsAt || null,
+      subscriptionStatus: company.subscriptionStatus,
+      trialEndsAt: company.trialEndsAt,
     });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: 'Erro ao fazer login.' });
+    console.error('[auth.loginAdmin] falha no login:', {
+      requestId: req.requestId || null,
+      code: error.code || 'UNKNOWN',
+      message: error.message,
+      meta: error.meta || null,
+    });
+    return res.status(500).json({
+      error: 'Erro ao fazer login.',
+      requestId: req.requestId || null,
+    });
   }
 }
 
@@ -387,7 +465,15 @@ async function loginEmployee(req, res) {
 
     const employee = await prisma.employee.findUnique({
       where: { cpf },
-      include: { company: true },
+      select: {
+        id: true,
+        name: true,
+        cpf: true,
+        password: true,
+        position: true,
+        active: true,
+        companyId: true,
+      },
     });
 
     if (!employee || !employee.active) {
@@ -397,6 +483,13 @@ async function loginEmployee(req, res) {
     const validPassword = await bcrypt.compare(password, employee.password);
     if (!validPassword) {
       return res.status(401).json({ error: 'Credenciais inválidas.' });
+    }
+
+    const company = await getCompanyAuthSnapshot(employee.companyId);
+    if (!company) {
+      return res.status(409).json({
+        error: 'Nao foi possivel carregar os dados da empresa. Entre em contato com o suporte.',
+      });
     }
 
     const token = generateToken({
@@ -416,17 +509,25 @@ async function loginEmployee(req, res) {
         position: employee.position,
       },
       company: {
-        id: employee.company.id,
-        name: employee.company.name,
-        cnpj: employee.company.cnpj,
-        plan: employee.company.plan,
+        id: company.id,
+        name: company.name,
+        cnpj: company.cnpj,
+        plan: company.plan,
       },
-      subscriptionStatus: employee.company.subscriptionStatus || SUBSCRIPTION_STATUS.INCOMPLETE,
-      trialEndsAt: employee.company.trialEndsAt || null,
+      subscriptionStatus: company.subscriptionStatus,
+      trialEndsAt: company.trialEndsAt,
     });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: 'Erro ao fazer login.' });
+    console.error('[auth.loginEmployee] falha no login:', {
+      requestId: req.requestId || null,
+      code: error.code || 'UNKNOWN',
+      message: error.message,
+      meta: error.meta || null,
+    });
+    return res.status(500).json({
+      error: 'Erro ao fazer login.',
+      requestId: req.requestId || null,
+    });
   }
 }
 

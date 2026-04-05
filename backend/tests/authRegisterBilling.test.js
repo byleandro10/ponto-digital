@@ -309,6 +309,9 @@ describe('authController register hosted billing flow', () => {
     expect(mockPrisma.user.deleteMany).toHaveBeenCalledWith({ where: { companyId: 'company-1' } });
     expect(mockPrisma.company.deleteMany).toHaveBeenCalledWith({ where: { id: 'company-1' } });
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Erro ao registrar a empresa. Tente novamente.' });
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Erro ao registrar a empresa. Tente novamente.',
+      requestId: null,
+    });
   });
 });
