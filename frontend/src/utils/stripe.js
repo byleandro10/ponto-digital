@@ -47,15 +47,15 @@ function loadStripeScript() {
           return;
         }
 
-        fail('A biblioteca segura da Stripe foi carregada, mas não ficou disponível no navegador.');
+        fail('Não foi possível preparar o campo de pagamento.');
       };
 
       const handleError = (event) => {
-        fail('Não foi possível carregar a biblioteca segura da Stripe. Verifique sua conexão, extensões do navegador ou filtros de rede.', event);
+        fail('Não foi possível carregar o campo de pagamento.', event);
       };
 
       timeoutId = window.setTimeout(() => {
-        fail('Os campos seguros da Stripe demoraram demais para carregar. Tente novamente ou verifique se o navegador está bloqueando recursos externos.');
+        fail('O campo de pagamento não carregou. Atualize a página e tente novamente.');
       }, STRIPE_LOAD_TIMEOUT_MS);
 
       script.addEventListener('load', handleLoad);
@@ -67,7 +67,7 @@ function loadStripeScript() {
         script.crossOrigin = 'anonymous';
         const target = document.head || document.body;
         if (!target) {
-          fail('Não foi possível preparar a página para carregar a Stripe.');
+          fail('Não foi possível preparar a página de pagamento.');
           return;
         }
         target.appendChild(script);
@@ -93,7 +93,7 @@ async function fetchPublishableKey() {
 
   const key = response.data?.publishableKey;
   if (!key) {
-    throw new Error('A chave pública da Stripe não foi encontrada no ambiente.');
+    throw new Error('A configuração de pagamento está incompleta.');
   }
 
   return key;
@@ -104,12 +104,12 @@ export async function getStripe() {
     stripePromise = Promise.all([loadStripeScript(), fetchPublishableKey()])
       .then(([StripeConstructor, publishableKey]) => {
         if (!StripeConstructor) {
-          throw new Error('A Stripe não está disponível neste navegador.');
+          throw new Error('O pagamento não está disponível neste navegador.');
         }
 
         const stripe = StripeConstructor(publishableKey);
         if (!stripe) {
-          throw new Error('Não foi possível inicializar a Stripe com a chave pública configurada.');
+          throw new Error('Não foi possível iniciar o pagamento agora.');
         }
 
         return stripe;

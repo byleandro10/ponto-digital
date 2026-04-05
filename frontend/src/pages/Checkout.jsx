@@ -237,7 +237,7 @@ export default function Checkout() {
         {step === 1 && (
           <div>
             <h2 className="mb-2 text-center text-2xl font-bold text-gray-900">Escolha seu plano</h2>
-            <p className="mb-8 text-center text-gray-500">30 dias grátis em todos os planos, com cobrança recorrente e segura pela Stripe.</p>
+            <p className="mb-8 text-center text-gray-500">30 dias grátis em todos os planos.</p>
 
             <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
               {Object.values(PLANS).map((plan) => (
@@ -298,12 +298,10 @@ export default function Checkout() {
         {step === 3 && (
           <div className="mx-auto max-w-2xl">
             <h2 className="mb-2 text-center text-2xl font-bold text-gray-900">Cartão de crédito</h2>
-            <p className="mb-2 text-center text-gray-500">
-              Digite os dados do cartão em um campo seguro da Stripe. Seu servidor não recebe número, validade nem código de segurança.
-            </p>
+            <p className="mb-2 text-center text-gray-500">Informe os dados do cartão para ativar seu período grátis.</p>
             <div className="mb-8 flex items-center justify-center gap-2">
               <FiLock className="h-4 w-4 text-green-600" />
-              <span className="text-sm font-medium text-green-700">Ambiente seguro com tokenização Stripe e suporte a 3D Secure</span>
+              <span className="text-sm font-medium text-green-700">Pagamento seguro</span>
             </div>
 
             <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -315,20 +313,20 @@ export default function Checkout() {
                 <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
                   <p className="text-sm font-semibold text-blue-900">Primeira cobrança</p>
                   <p className="mt-1 text-sm text-blue-700">
-                    O trial começa agora e a primeira cobrança prevista será em <strong>{firstChargeDate.toLocaleDateString('pt-BR')}</strong>.
+                    Você começa agora e a primeira cobrança será em <strong>{firstChargeDate.toLocaleDateString('pt-BR')}</strong>.
                   </p>
                 </div>
               </div>
 
               <StripeField
                 label="Dados do cartão"
-                helper="Digite número, validade e código de segurança no campo protegido da Stripe."
+                helper="Preencha os dados do cartão para continuar."
                 error={cardError}
                 containerRef={cardElementRef}
               />
 
               {stripeLoading && (
-                <p className="mt-4 text-sm text-gray-500">Carregando o campo seguro de pagamento...</p>
+                <p className="mt-4 text-sm text-gray-500">Carregando campo de pagamento...</p>
               )}
 
               {stripeLoadError && (
@@ -341,11 +339,11 @@ export default function Checkout() {
                 <div className="mt-5 flex flex-col gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
                   <div className="flex items-center gap-2">
                     <FiShield className="text-slate-500" />
-                    <span>Criptografia, tokenização e autenticação protegidas pela Stripe.</span>
+                    <span>Seus dados estão protegidos.</span>
                   </div>
                   <button type="button" onClick={mount} className="inline-flex items-center gap-2 font-medium text-blue-600 hover:text-blue-800">
                     <FiRefreshCw className="h-4 w-4" />
-                    Recarregar campo
+                    Tentar novamente
                   </button>
                 </div>
               )}
@@ -403,9 +401,9 @@ export default function Checkout() {
                 <div className="flex items-start gap-3">
                   <FiCreditCard className="mt-0.5 h-5 w-5 shrink-0 text-green-600" />
                   <div>
-                    <p className="text-sm font-semibold text-green-800">Pagamento pronto para cobrança futura</p>
+                    <p className="text-sm font-semibold text-green-800">Pagamento confirmado</p>
                     <p className="mt-1 text-xs text-green-700">
-                      Seu cartão será validado pela Stripe agora e ficará preparado para cobrança automática após o período de trial.
+                      Seu cartão será validado agora para liberar a cobrança automática após o período grátis.
                     </p>
                   </div>
                 </div>

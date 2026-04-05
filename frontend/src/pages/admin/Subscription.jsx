@@ -206,7 +206,7 @@ export default function Subscription() {
               <FiAlertTriangle className="mt-0.5 h-6 w-6 shrink-0 text-red-500" />
               <div>
                 <h3 className="text-lg font-bold text-red-800">Assinatura inativa</h3>
-                <p className="mt-1 text-sm text-red-600">Cadastre um cartão válido para reativar seu acesso e garantir as próximas cobranças automáticas.</p>
+                <p className="mt-1 text-sm text-red-600">Cadastre um cartão válido para reativar seu acesso.</p>
               </div>
             </div>
           </div>
@@ -257,9 +257,7 @@ export default function Subscription() {
               <FiCreditCard className="text-blue-600" />
               {needsReactivation ? 'Validar cartão e reativar assinatura' : 'Atualizar plano e cartão'}
             </h2>
-            <p className="mb-6 text-sm text-gray-500">
-              Digite os dados do cartão em um campo seguro da Stripe. Seu servidor não recebe número, validade nem código de segurança.
-            </p>
+            <p className="mb-6 text-sm text-gray-500">Informe os dados do cartão para concluir a atualização.</p>
 
             <div className="mb-6">
               <label className="mb-3 block text-sm font-semibold text-gray-700">Selecione o plano</label>
@@ -306,13 +304,13 @@ export default function Subscription() {
 
               <StripeField
                 label="Dados do cartão"
-                helper="Digite número, validade e código de segurança no campo protegido da Stripe."
+                helper="Preencha os dados do cartão para continuar."
                 error={cardError}
                 containerRef={cardElementRef}
               />
 
               {stripeLoading && (
-                <p className="text-sm text-gray-500">Carregando o campo seguro de pagamento...</p>
+                <p className="text-sm text-gray-500">Carregando campo de pagamento...</p>
               )}
 
               {stripeLoadError && (
@@ -325,11 +323,11 @@ export default function Subscription() {
                 <div className="flex flex-col gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
                   <div className="flex items-center gap-2">
                     <FiLock className="text-slate-500" />
-                    <span>Pagamento seguro com Stripe, tokenização e autenticação quando necessário.</span>
+                    <span>Pagamento seguro.</span>
                   </div>
                   <button type="button" onClick={mount} className="inline-flex items-center gap-2 font-medium text-blue-600 hover:text-blue-800">
                     <FiRefreshCw className="h-4 w-4" />
-                    Recarregar campo
+                    Tentar novamente
                   </button>
                 </div>
               )}

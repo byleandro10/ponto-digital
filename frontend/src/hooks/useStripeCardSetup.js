@@ -108,12 +108,12 @@ export function useStripeCardSetup({ enabled, email }) {
 
       mountTimeoutRef.current = window.setTimeout(() => {
         if (!readyRef.current) {
-          setStripeLoadError('Os campos seguros da Stripe não ficaram prontos para digitação. Tente novamente ou desative extensões que bloqueiam recursos externos.');
+          setStripeLoadError('Não foi possível carregar o campo do cartão. Atualize a página e tente novamente.');
           setStripeReady(false);
         }
       }, STRIPE_LOAD_TIMEOUT_MS);
     } catch (error) {
-      setStripeLoadError(error.message || 'Não foi possível carregar o formulário seguro de cartão.');
+      setStripeLoadError(error.message || 'Não foi possível carregar o campo do cartão.');
       setStripeReady(false);
     } finally {
       setStripeLoading(false);
@@ -135,7 +135,7 @@ export function useStripeCardSetup({ enabled, email }) {
 
   const confirmCardSetup = useCallback(async ({ cardHolder }) => {
     if (!stripeRef.current || !mountedElementRef.current || !readyRef.current) {
-      throw new Error('O formulário seguro do cartão ainda não está pronto.');
+      throw new Error('O campo do cartão ainda não está pronto.');
     }
 
     const response = await api.post(
@@ -148,7 +148,7 @@ export function useStripeCardSetup({ enabled, email }) {
     const setupIntentId = response.data?.setupIntentId;
 
     if (!clientSecret) {
-      throw new Error('A Stripe não retornou os dados necessários para validar o cartão.');
+      throw new Error('Não foi possível iniciar a validação do cartão.');
     }
 
     const result = await stripeRef.current.confirmCardSetup(clientSecret, {
@@ -166,7 +166,7 @@ export function useStripeCardSetup({ enabled, email }) {
     }
 
     if (!result.setupIntent?.payment_method) {
-      throw new Error('O método de pagamento não foi retornado pela Stripe.');
+      throw new Error('Não foi possível concluir a validação do cartão.');
     }
 
     return {
