@@ -18,52 +18,27 @@ const {
 function isLegacyBillingSchemaError(error) {
   const message = String(error?.message || error?.meta?.message || '').toLowerCase();
   return (
-    error?.code === 'P2022'
+    error?.code === 'P2021'
+    || error?.code === 'P2022'
     || /unknown column|does not exist|table .* doesn't exist/i.test(message)
   );
 }
 
-function buildCompanyRegistrationCreateInput({
+function buildCompanyCreateData({
   companyName,
   cnpj,
   plan,
-  name,
-  email,
-  hashedPassword,
   includeCompanySubscriptionStatus = true,
   includeHostedBillingFields = true,
-  includeLocalSubscription = true,
-  includeSubscriptionStatus = true,
-  includeSubscriptionHostedBillingFields = true,
 }) {
   const companyData = {
     name: companyName,
     cnpj,
     plan: getPlanConfig(plan).slug,
-    users: {
-      create: {
-        name,
-        email,
-        password: hashedPassword,
-        role: 'ADMIN',
-      },
-    },
   };
 
   if (includeCompanySubscriptionStatus) {
     companyData.subscriptionStatus = SUBSCRIPTION_STATUS.INCOMPLETE;
-  }
-
-  if (includeLocalSubscription) {
-    companyData.subscriptions = {
-      create: {
-        plan,
-      },
-    };
-
-    if (includeSubscriptionStatus) {
-      companyData.subscriptions.create.status = SUBSCRIPTION_STATUS.INCOMPLETE;
-    }
   }
 
   if (includeHostedBillingFields) {
@@ -71,59 +46,45 @@ function buildCompanyRegistrationCreateInput({
     companyData.cancelAtPeriodEnd = false;
   }
 
-  if (includeLocalSubscription && includeSubscriptionHostedBillingFields) {
-    companyData.subscriptions.create.billingStatus = BILLING_STATUS.INCOMPLETE;
-    companyData.subscriptions.create.cancelAtPeriodEnd = false;
-  }
-
-  return {
-    data: companyData,
-    select: {
-      id: true,
-      name: true,
-      cnpj: true,
-      plan: true,
-      users: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-        },
-      },
-    },
-  };
+  return companyData;
 }
 
-async function createCompanyWithBillingCompatibility(payload) {
+function buildSubscriptionCreateData({
+  companyId,
+  plan,
+  includeSubscriptionStatus = true,
+  includeHostedBillingFields = true,
+}) {
+  const data = {
+    companyId,
+    plan,
+  };
+
+  if (includeSubscriptionStatus) {
+    data.status = SUBSCRIPTION_STATUS.INCOMPLETE;
+  }
+
+  if (includeHostedBillingFields) {
+    data.billingStatus = BILLING_STATUS.INCOMPLETE;
+    data.cancelAtPeriodEnd = false;
+  }
+
+  return data;
+}
+
+async function createCompanyWithBillingCompatibility(tx, payload) {
   const attempts = [
     {
       includeCompanySubscriptionStatus: true,
       includeHostedBillingFields: true,
-      includeLocalSubscription: true,
-      includeSubscriptionStatus: true,
-      includeSubscriptionHostedBillingFields: true,
     },
     {
       includeCompanySubscriptionStatus: true,
       includeHostedBillingFields: false,
-      includeLocalSubscription: true,
-      includeSubscriptionStatus: true,
-      includeSubscriptionHostedBillingFields: false,
-    },
-    {
-      includeCompanySubscriptionStatus: true,
-      includeHostedBillingFields: false,
-      includeLocalSubscription: false,
-      includeSubscriptionStatus: false,
-      includeSubscriptionHostedBillingFields: false,
     },
     {
       includeCompanySubscriptionStatus: false,
       includeHostedBillingFields: false,
-      includeLocalSubscription: false,
-      includeSubscriptionStatus: false,
-      includeSubscriptionHostedBillingFields: false,
     },
   ];
 
@@ -131,12 +92,18 @@ async function createCompanyWithBillingCompatibility(payload) {
 
   for (const attempt of attempts) {
     try {
-      return await prisma.company.create(
-        buildCompanyRegistrationCreateInput({
+      return await tx.company.create({
+        data: buildCompanyCreateData({
           ...payload,
           ...attempt,
-        })
-      );
+        }),
+        select: {
+          id: true,
+          name: true,
+          cnpj: true,
+          plan: true,
+        },
+      });
     } catch (error) {
       if (!isLegacyBillingSchemaError(error)) {
         throw error;
@@ -147,6 +114,50 @@ async function createCompanyWithBillingCompatibility(payload) {
   }
 
   throw lastCompatibilityError;
+}
+
+async function createAdminUser(tx, { companyId, name, email, hashedPassword }) {
+  return tx.user.create({
+    data: {
+      companyId,
+      name,
+      email,
+      password: hashedPassword,
+      role: 'ADMIN',
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+    },
+  });
+}
+
+async function createLocalSubscriptionIfPossible(tx, { companyId, plan }) {
+  const attempts = [
+    { includeSubscriptionStatus: true, includeHostedBillingFields: true },
+    { includeSubscriptionStatus: true, includeHostedBillingFields: false },
+    { includeSubscriptionStatus: false, includeHostedBillingFields: false },
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      await tx.subscription.create({
+        data: buildSubscriptionCreateData({
+          companyId,
+          plan,
+          ...attempt,
+        }),
+        select: { id: true },
+      });
+      return;
+    } catch (error) {
+      if (!isLegacyBillingSchemaError(error)) {
+        throw error;
+      }
+    }
+  }
 }
 
 async function trackLoginDirect(companyId, type) {
@@ -237,18 +248,32 @@ async function register(req, res) {
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    const company = await createCompanyWithBillingCompatibility({
-      companyName,
-      cnpj,
-      plan,
-      name,
-      email,
-      hashedPassword,
+    const { company, user } = await prisma.$transaction(async (tx) => {
+      const createdCompany = await createCompanyWithBillingCompatibility(tx, {
+        companyName,
+        cnpj,
+        plan,
+      });
+
+      const createdUser = await createAdminUser(tx, {
+        companyId: createdCompany.id,
+        name,
+        email,
+        hashedPassword,
+      });
+
+      await createLocalSubscriptionIfPossible(tx, {
+        companyId: createdCompany.id,
+        plan,
+      });
+
+      return {
+        company: createdCompany,
+        user: createdUser,
+      };
     });
 
     createdCompanyId = company.id;
-
-    const user = company.users[0];
     const token = generateToken({
       id: user.id,
       role: user.role,
@@ -275,7 +300,12 @@ async function register(req, res) {
       trialEndsAt: null,
     });
   } catch (error) {
-    console.error('Erro ao registrar empresa:', error.message);
+    console.error('[auth.register] falha no cadastro:', {
+      requestId: req.requestId || null,
+      code: error.code || 'UNKNOWN',
+      message: error.message,
+      meta: error.meta || null,
+    });
 
     if (createdCompanyId) {
       await cleanupFailedCompanyRegistration(createdCompanyId);

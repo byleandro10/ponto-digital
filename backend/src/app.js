@@ -202,8 +202,18 @@ app.use((err, req, res, next) => {
     return res.status(403).json({ error: 'Origem nao permitida pelo CORS.' });
   }
 
-  console.error(err.stack);
-  return res.status(500).json({ error: 'Erro interno do servidor.' });
+  console.error('[request-error]', {
+    requestId: req.requestId || null,
+    method: req.method,
+    path: req.originalUrl,
+    code: err.code || 'UNKNOWN',
+    message: err.message,
+    stack: err.stack,
+  });
+  return res.status(500).json({
+    error: 'Erro interno do servidor.',
+    requestId: req.requestId || null,
+  });
 });
 
 if (require.main === module) {

@@ -6,12 +6,14 @@ const mockPrisma = {
   },
   user: {
     findUnique: jest.fn(),
-    deleteMany: jest.fn(),
-  },
-  payment: {
+    create: jest.fn(),
     deleteMany: jest.fn(),
   },
   subscription: {
+    create: jest.fn(),
+    deleteMany: jest.fn(),
+  },
+  payment: {
     deleteMany: jest.fn(),
   },
   usageLog: {
@@ -43,17 +45,34 @@ function makeRes() {
   return res;
 }
 
+function setupTransactionMock() {
+  mockPrisma.$transaction.mockImplementation(async (arg) => {
+    if (typeof arg === 'function') {
+      return arg(mockPrisma);
+    }
+    return arg;
+  });
+}
+
 describe('authController register hosted billing flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockPrisma.$transaction.mockImplementation(async (arg) => {
-      if (typeof arg === 'function') {
-        return arg(mockPrisma);
-      }
-      return arg;
-    });
+    setupTransactionMock();
     mockPrisma.company.findUnique.mockResolvedValue(null);
     mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.company.create.mockResolvedValue({
+      id: 'company-1',
+      name: 'Empresa',
+      cnpj: '34192212000130',
+      plan: 'professional',
+    });
+    mockPrisma.user.create.mockResolvedValue({
+      id: 'user-1',
+      name: 'Admin Teste',
+      email: 'novo@empresa.com',
+      role: 'ADMIN',
+    });
+    mockPrisma.subscription.create.mockResolvedValue({ id: 'subscription-1' });
   });
 
   test('returns clear message when cnpj already exists', async () => {
@@ -80,15 +99,7 @@ describe('authController register hosted billing flow', () => {
     expect(res.json).toHaveBeenCalledWith({ error: 'Este CNPJ já possui uma empresa cadastrada.' });
   });
 
-  test('creates company with incomplete hosted billing state', async () => {
-    mockPrisma.company.create.mockResolvedValue({
-      id: 'company-1',
-      name: 'Empresa',
-      cnpj: '34.192.212/0001-30',
-      plan: 'professional',
-      users: [{ id: 'user-1', name: 'Admin Teste', email: 'novo@empresa.com', role: 'ADMIN' }],
-    });
-
+  test('creates company, admin user and placeholder subscription in hosted billing flow', async () => {
     const req = {
       body: {
         companyName: 'Empresa',
@@ -103,38 +114,66 @@ describe('authController register hosted billing flow', () => {
 
     await register(req, res);
 
-    expect(mockPrisma.company.create).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockPrisma.company.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
+        name: 'Empresa',
+        cnpj: '34192212000130',
+        plan: 'professional',
         subscriptionStatus: 'INCOMPLETE',
         billingStatus: 'INCOMPLETE',
-        plan: 'professional',
+        cancelAtPeriodEnd: false,
       }),
-      select: expect.objectContaining({
+      select: {
         id: true,
         name: true,
         cnpj: true,
         plan: true,
-      }),
-    }));
+      },
+    });
+    expect(mockPrisma.user.create).toHaveBeenCalledWith({
+      data: {
+        companyId: 'company-1',
+        name: 'Admin Teste',
+        email: 'novo@empresa.com',
+        password: 'hashed-password',
+        role: 'ADMIN',
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+      },
+    });
+    expect(mockPrisma.subscription.create).toHaveBeenCalledWith({
+      data: {
+        companyId: 'company-1',
+        plan: 'PROFESSIONAL',
+        status: 'INCOMPLETE',
+        billingStatus: 'INCOMPLETE',
+        cancelAtPeriodEnd: false,
+      },
+      select: { id: true },
+    });
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
       subscriptionStatus: 'INCOMPLETE',
       trialEndsAt: null,
+      token: 'jwt-token',
     }));
   });
 
-  test('falls back to legacy create payload when hosted billing columns are not in the database yet', async () => {
+  test('falls back when hosted billing columns are not in the company table yet', async () => {
     mockPrisma.company.create
       .mockRejectedValueOnce({
         code: 'P2022',
-        message: 'The column `billingStatus` does not exist in the current database.',
+        message: 'Unknown column billingStatus in field list',
       })
       .mockResolvedValueOnce({
         id: 'company-1',
         name: 'Empresa',
-        cnpj: '34.192.212/0001-30',
+        cnpj: '34192212000130',
         plan: 'professional',
-        users: [{ id: 'user-1', name: 'Admin Teste', email: 'novo@empresa.com', role: 'ADMIN' }],
       });
 
     const req = {
@@ -152,25 +191,16 @@ describe('authController register hosted billing flow', () => {
     await register(req, res);
 
     expect(mockPrisma.company.create).toHaveBeenCalledTimes(2);
-    expect(mockPrisma.company.create.mock.calls[0][0]).toEqual(expect.objectContaining({
+    expect(mockPrisma.company.create.mock.calls[1][0]).toEqual({
       data: expect.objectContaining({
-        billingStatus: 'INCOMPLETE',
-        cancelAtPeriodEnd: false,
-        subscriptions: expect.objectContaining({
-          create: expect.objectContaining({
-            billingStatus: 'INCOMPLETE',
-            cancelAtPeriodEnd: false,
-          }),
-        }),
+        name: 'Empresa',
+        cnpj: '34192212000130',
+        plan: 'professional',
+        subscriptionStatus: 'INCOMPLETE',
       }),
-    }));
-    expect(mockPrisma.company.create.mock.calls[1][0]).toEqual(expect.objectContaining({
-      data: expect.not.objectContaining({
-        billingStatus: expect.anything(),
-        cancelAtPeriodEnd: expect.anything(),
-      }),
-    }));
-    expect(mockPrisma.company.create.mock.calls[1][0].data.subscriptions.create).toEqual(
+      select: expect.any(Object),
+    });
+    expect(mockPrisma.company.create.mock.calls[1][0].data).toEqual(
       expect.not.objectContaining({
         billingStatus: expect.anything(),
         cancelAtPeriodEnd: expect.anything(),
@@ -179,15 +209,11 @@ describe('authController register hosted billing flow', () => {
     expect(res.status).toHaveBeenCalledWith(201);
   });
 
-  test('falls back to company-only onboarding payload when the local subscription schema is still incompatible', async () => {
+  test('falls back when the company table does not have subscription fields', async () => {
     mockPrisma.company.create
       .mockRejectedValueOnce({
         code: 'P2022',
         message: 'Unknown column billingStatus in field list',
-      })
-      .mockRejectedValueOnce({
-        code: 'P2022',
-        message: 'Unknown column stripeCheckoutSessionId in field list',
       })
       .mockRejectedValueOnce({
         code: 'P2022',
@@ -196,9 +222,8 @@ describe('authController register hosted billing flow', () => {
       .mockResolvedValueOnce({
         id: 'company-1',
         name: 'Empresa',
-        cnpj: '34.192.212/0001-30',
+        cnpj: '34192212000130',
         plan: 'basic',
-        users: [{ id: 'user-1', name: 'Admin Teste', email: 'novo@empresa.com', role: 'ADMIN' }],
       });
 
     const req = {
@@ -215,26 +240,52 @@ describe('authController register hosted billing flow', () => {
 
     await register(req, res);
 
-    expect(mockPrisma.company.create).toHaveBeenCalledTimes(4);
-    expect(mockPrisma.company.create.mock.calls[3][0].data).toEqual(
-      expect.not.objectContaining({
-        subscriptions: expect.anything(),
-        subscriptionStatus: expect.anything(),
-        billingStatus: expect.anything(),
-        cancelAtPeriodEnd: expect.anything(),
+    expect(mockPrisma.company.create).toHaveBeenCalledTimes(3);
+    expect(mockPrisma.company.create.mock.calls[2][0].data).toEqual({
+      name: 'Empresa',
+      cnpj: '34192212000130',
+      plan: 'basic',
+    });
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      subscriptionStatus: 'INCOMPLETE',
+    }));
+  });
+
+  test('falls back when the local subscription table is still incompatible', async () => {
+    mockPrisma.subscription.create
+      .mockRejectedValueOnce({
+        code: 'P2022',
+        message: 'Unknown column billingStatus in field list',
       })
-    );
+      .mockRejectedValueOnce({
+        code: 'P2022',
+        message: 'Unknown column status in field list',
+      })
+      .mockRejectedValueOnce({
+        code: 'P2021',
+        message: "The table `Subscription` doesn't exist in the current database.",
+      });
+
+    const req = {
+      body: {
+        companyName: 'Empresa',
+        cnpj: '34192212000130',
+        name: 'Admin Teste',
+        email: 'novo@empresa.com',
+        password: 'SenhaForte123',
+        plan: 'basic',
+      },
+    };
+    const res = makeRes();
+
+    await register(req, res);
+
+    expect(mockPrisma.subscription.create).toHaveBeenCalledTimes(3);
     expect(res.status).toHaveBeenCalledWith(201);
   });
 
   test('cleans created company data if an error happens after persistence', async () => {
-    mockPrisma.company.create.mockResolvedValue({
-      id: 'company-1',
-      name: 'Empresa',
-      cnpj: '34.192.212/0001-30',
-      plan: 'basic',
-      users: [{ id: 'user-1', name: 'Admin Teste', email: 'novo@empresa.com', role: 'ADMIN' }],
-    });
     mockGenerateToken.generateToken.mockImplementationOnce(() => {
       throw new Error('token failure');
     });
