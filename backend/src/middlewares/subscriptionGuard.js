@@ -46,68 +46,49 @@ async function subscriptionGuard(req, res, next) {
       return res.status(404).json({ error: 'Empresa nao encontrada.' });
     }
 
-    const now = new Date();
-    const status = company.subscriptionStatus;
-
-    if (status === 'ACTIVE') {
+    if (['ACTIVE', 'TRIALING'].includes(company.subscriptionStatus)) {
       return next();
     }
 
-    if (status === 'TRIAL') {
-      if (company.trialEndsAt && company.trialEndsAt > now) {
-        return next();
-      }
+    const errorByStatus = {
+      INCOMPLETE: {
+        error: 'Finalize a assinatura para liberar o acesso ao sistema.',
+        code: 'SUBSCRIPTION_INCOMPLETE',
+      },
+      INCOMPLETE_EXPIRED: {
+        error: 'A sessao de assinatura expirou. Inicie uma nova assinatura para continuar.',
+        code: 'SUBSCRIPTION_INCOMPLETE_EXPIRED',
+      },
+      PAST_DUE: {
+        error: 'Existe um pagamento pendente. Atualize a forma de pagamento para continuar.',
+        code: 'SUBSCRIPTION_PAST_DUE',
+      },
+      UNPAID: {
+        error: 'A cobranca nao foi concluida. Atualize a forma de pagamento para continuar.',
+        code: 'SUBSCRIPTION_UNPAID',
+      },
+      CANCELED: {
+        error: 'A assinatura foi cancelada. Reative para continuar usando o sistema.',
+        code: 'SUBSCRIPTION_CANCELED',
+      },
+    };
 
-      logSecurityEvent(req, 'subscription_denied', { reason: 'trial_expired' });
-      return res.status(402).json({
-        error: 'Periodo de teste expirado. Ative sua assinatura para continuar.',
-        code: 'TRIAL_EXPIRED',
-      });
-    }
-
-    if (status === 'PAST_DUE') {
-      const subscription = await prisma.subscription.findFirst({
-        where: { companyId, status: 'PAST_DUE' },
-        orderBy: { updatedAt: 'desc' },
-      });
-
-      if (subscription) {
-        let graceEnd;
-        if (subscription.gracePeriodEnd) {
-          graceEnd = new Date(subscription.gracePeriodEnd);
-        } else {
-          graceEnd = new Date(subscription.updatedAt);
-          graceEnd.setDate(graceEnd.getDate() + 3);
-        }
-
-        if (now < graceEnd) {
-          return next();
-        }
-      }
-
-      logSecurityEvent(req, 'subscription_denied', { reason: 'payment_overdue' });
-      return res.status(402).json({
-        error: 'Pagamento pendente. Regularize para manter o acesso.',
-        code: 'PAYMENT_OVERDUE',
-      });
-    }
-
-    if (status === 'PAUSED') {
-      logSecurityEvent(req, 'subscription_denied', { reason: 'subscription_paused' });
-      return res.status(402).json({
-        error: 'Assinatura pausada. Reative para continuar usando o sistema.',
-        code: 'SUBSCRIPTION_PAUSED',
-      });
-    }
-
-    logSecurityEvent(req, 'subscription_denied', { reason: 'subscription_inactive', status });
-    return res.status(402).json({
+    const response = errorByStatus[company.subscriptionStatus] || {
       error: 'Assinatura inativa. Reative para continuar usando o sistema.',
       code: 'SUBSCRIPTION_INACTIVE',
+    };
+
+    logSecurityEvent(req, 'subscription_denied', {
+      reason: response.code,
+      status: company.subscriptionStatus,
     });
+
+    return res.status(402).json(response);
   } catch (error) {
     console.error('Erro no subscriptionGuard:', error);
-    return res.status(500).json({ error: 'Erro interno ao verificar assinatura. Tente novamente.' });
+    return res.status(500).json({
+      error: 'Erro interno ao verificar assinatura. Tente novamente.',
+    });
   }
 }
 

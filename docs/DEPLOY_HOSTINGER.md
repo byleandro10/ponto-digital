@@ -64,7 +64,9 @@ VITE_API_BASE_URL=/api
 NOTIFICATION_TIMEZONE=America/Sao_Paulo
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
-VITE_STRIPE_PUBLIC_KEY=
+STRIPE_PRICE_BASIC=
+STRIPE_PRICE_PROFESSIONAL=
+STRIPE_PRICE_ENTERPRISE=
 SUPER_ADMIN_EMAIL=
 SUPER_ADMIN_PASSWORD=
 ```
@@ -75,7 +77,7 @@ Notas:
 - Em producao na Hostinger, nao use `localhost` como host do MySQL. Use o host remoto exibido no painel.
 - `JWT_SECRET` deve ter pelo menos 32 caracteres.
 - `VITE_API_BASE_URL` deve ser `/api`.
-- `VITE_STRIPE_PUBLIC_KEY` deve repetir a chave publica usada pelo frontend.
+- cadastre os `STRIPE_PRICE_*` com os IDs reais dos precos recorrentes criados na Stripe.
 - nao cadastre `DIRECT_URL`
 - nao use `api.lbrcore.com` nesta configuracao
 
@@ -129,7 +131,9 @@ Tambem revise:
 - `APP_URL`
 - `VITE_API_BASE_URL`
 - `STRIPE_WEBHOOK_SECRET`
-- `VITE_STRIPE_PUBLIC_KEY`
+- `STRIPE_PRICE_BASIC`
+- `STRIPE_PRICE_PROFESSIONAL`
+- `STRIPE_PRICE_ENTERPRISE`
 
 ## Checklist pos-deploy
 
@@ -141,7 +145,8 @@ Tambem revise:
 - rotas autenticadas continuam chamando `/api`
 - conexao com MySQL da Hostinger funciona
 - geracao de relatorios e exportacoes funciona
-- Stripe.js carrega no frontend
+- checkout da Stripe abre corretamente
+- portal do cliente da Stripe abre corretamente
 - webhook da Stripe responde no dominio publico
 
 ## Configuracao operacional final

@@ -20,17 +20,22 @@ async function reserveWebhookEvent({ eventId, eventType, requestId }) {
         status: 'PROCESSING',
       },
     });
+
     return { isDuplicate: false };
   } catch (error) {
     if (error.code === 'P2002') {
       return { isDuplicate: true };
     }
+
     throw error;
   }
 }
 
 async function processStripeEvent(event) {
   switch (event.type) {
+    case 'checkout.session.completed':
+      await billingService.handleCheckoutSessionCompleted(event.data.object);
+      return;
     case 'customer.created':
       await billingService.handleStripeCustomerEvent(event.data.object);
       return;
@@ -39,20 +44,10 @@ async function processStripeEvent(event) {
     case 'customer.subscription.deleted':
       await billingService.handleStripeSubscriptionEvent(event.data.object);
       return;
-    case 'invoice.created':
+    case 'invoice.finalized':
     case 'invoice.paid':
     case 'invoice.payment_failed':
-    case 'invoice.payment_succeeded':
-      await billingService.handleStripeInvoiceEvent(event.data.object);
-      return;
-    case 'payment_intent.succeeded':
-    case 'payment_intent.payment_failed':
-      await billingService.handleStripePaymentIntentEvent(event.data.object);
-      return;
-    case 'setup_intent.succeeded':
-    case 'setup_intent.requires_action':
-    case 'setup_intent.setup_failed':
-      await billingService.handleStripeSetupIntentEvent(event.data.object);
+      await billingService.handleStripeInvoiceEvent(event.data.object, event.type);
       return;
     case 'payment_method.attached':
       await billingService.handleStripePaymentMethodAttached(event.data.object);
@@ -97,23 +92,27 @@ async function handleStripeWebhook(req, res) {
 
   try {
     await processStripeEvent(event);
+
     await markWebhookEvent(event.id, {
       status: 'PROCESSED',
       processedAt: new Date(),
       errorMessage: null,
     });
+
     return res.status(200).json({ received: true });
   } catch (error) {
     await markWebhookEvent(event.id, {
       status: 'FAILED',
       errorMessage: error.message,
     });
+
     console.error('[Webhook] Erro ao processar webhook da Stripe:', {
       requestId: req.requestId,
       eventId: event.id,
       eventType: event.type,
       message: error.message,
     });
+
     return res.status(500).json({ error: 'Webhook processing failed' });
   }
 }

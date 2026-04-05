@@ -7,16 +7,16 @@ const { roleGuard } = require('../middlewares/roleGuard');
 const { allowBodyFields, allowQueryFields } = require('../middlewares/requestGuard');
 const { logSecurityEvent } = require('../utils/securityLogger');
 const {
-  getPublicBillingConfig,
-  createSetupIntent,
-  createPreapproval,
+  createCheckoutSession,
+  syncCheckoutSession,
+  createPortalSession,
   getStatus,
-  cancelSubscription,
+  getPayments,
 } = require('../controllers/subscriptionController');
 
 const billingLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
-  max: 20,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => {
@@ -25,15 +25,14 @@ const billingLimiter = rateLimit({
   },
 });
 
-router.get('/public-config', billingLimiter, allowQueryFields([]), getPublicBillingConfig);
-router.post('/setup-intent', billingLimiter, allowBodyFields(['email']), createSetupIntent);
-
 router.use(authMiddleware);
 router.use(roleGuard('ADMIN', 'SUPER_ADMIN'));
 router.use(billingLimiter);
 
-router.post('/create-subscription', allowBodyFields(['plan', 'paymentMethodId', 'setupIntentId']), createPreapproval);
-router.post('/cancel-subscription', allowBodyFields([]), cancelSubscription);
-router.get('/subscription-status', allowQueryFields([]), getStatus);
+router.post('/checkout-session', allowBodyFields(['plan']), createCheckoutSession);
+router.post('/checkout-session/sync', allowBodyFields(['sessionId']), syncCheckoutSession);
+router.post('/portal-session', allowBodyFields([]), createPortalSession);
+router.get('/status', allowQueryFields([]), getStatus);
+router.get('/payments', allowQueryFields([]), getPayments);
 
 module.exports = router;

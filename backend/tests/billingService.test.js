@@ -11,7 +11,6 @@ const mockPrisma = {
     findUnique: jest.fn(),
     update: jest.fn(),
     create: jest.fn(),
-    findMany: jest.fn(),
   },
   payment: {
     upsert: jest.fn(),
@@ -23,11 +22,7 @@ const mockPrisma = {
 const mockStripeService = {
   createCustomer: jest.fn(),
   updateCustomer: jest.fn(),
-  attachPaymentMethod: jest.fn(),
-  retrievePaymentMethod: jest.fn(),
-  createSubscription: jest.fn(),
-  updateSubscription: jest.fn(),
-  cancelSubscription: jest.fn(),
+  createCheckoutSession: jest.fn(),
   retrieveSubscription: jest.fn(),
 };
 
@@ -36,9 +31,12 @@ jest.mock('../src/services/stripeService', () => mockStripeService);
 
 const billingService = require('../src/services/billingService');
 
-describe('billingService with Stripe', () => {
+describe('billingService hosted Stripe flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.STRIPE_PRICE_BASIC = 'price_basic_xxx';
+    process.env.STRIPE_PRICE_PROFESSIONAL = 'price_professional_xxx';
+    process.env.STRIPE_PRICE_ENTERPRISE = 'price_enterprise_xxx';
     mockPrisma.$transaction.mockImplementation(async (arg) => {
       if (typeof arg === 'function') {
         return arg(mockPrisma);
@@ -47,26 +45,12 @@ describe('billingService with Stripe', () => {
     });
   });
 
-  test('cria assinatura trial na Stripe com payment method', async () => {
-    const now = new Date('2026-04-04T10:00:00.000Z');
-    const trialEndsAt = new Date('2026-05-04T10:00:00.000Z');
-    jest.useFakeTimers().setSystemTime(now.getTime());
-
+  test('creates checkout session for an incomplete local subscription', async () => {
     mockPrisma.company.findUnique.mockResolvedValue({
       id: 'company-1',
       name: 'Empresa Teste',
       plan: 'professional',
-      subscriptionStatus: 'TRIAL',
-      trialEndsAt,
-    });
-    mockPrisma.subscription.findFirst.mockResolvedValue({
-      id: 'sub-1',
-      companyId: 'company-1',
-      plan: 'PROFESSIONAL',
-      status: 'TRIAL',
-      trialEndsAt,
-      mpPreapprovalId: null,
-      trialStart: now,
+      stripeCustomerId: null,
     });
     mockPrisma.user.findFirst.mockResolvedValue({
       id: 'user-1',
@@ -74,104 +58,128 @@ describe('billingService with Stripe', () => {
       email: 'admin@empresa.com',
       name: 'Admin',
     });
-    mockStripeService.createCustomer.mockResolvedValue({ id: 'cus_123' });
-    mockStripeService.retrievePaymentMethod.mockResolvedValue({ id: 'pm_123', customer: 'cus_123' });
-    mockStripeService.createSubscription.mockResolvedValue({
-      id: 'sub_stripe_123',
-      status: 'trialing',
-      current_period_start: Math.floor(now.getTime() / 1000),
-      current_period_end: Math.floor(trialEndsAt.getTime() / 1000),
-      default_payment_method: 'pm_123',
-      items: { data: [{ price: { id: 'price_123' } }] },
-    });
-    mockPrisma.subscription.update.mockImplementation(async ({ data }) => ({
-      id: 'sub-1',
+    mockPrisma.subscription.findFirst.mockResolvedValue(null);
+    mockPrisma.subscription.create.mockResolvedValue({
+      id: 'sub-local-1',
       companyId: 'company-1',
-      createdAt: now,
-      ...data,
-    }));
+      plan: 'PROFESSIONAL',
+      status: 'INCOMPLETE',
+    });
+    mockStripeService.createCustomer.mockResolvedValue({ id: 'cus_123' });
+    mockStripeService.createCheckoutSession.mockResolvedValue({
+      id: 'cs_test_123',
+      url: 'https://checkout.stripe.com/test/cs_test_123',
+    });
     mockPrisma.company.update.mockResolvedValue({});
+    mockPrisma.subscription.update.mockResolvedValue({});
 
-    const result = await billingService.createSubscription({
+    const result = await billingService.createCheckoutSession({
       companyId: 'company-1',
       userId: 'user-1',
       plan: 'PROFESSIONAL',
-      paymentMethodId: 'pm_123',
     });
 
-    expect(mockStripeService.attachPaymentMethod).toHaveBeenCalledWith({
-      customerId: 'cus_123',
-      paymentMethodId: 'pm_123',
-    });
-    expect(mockStripeService.createSubscription).toHaveBeenCalledWith(expect.objectContaining({
-      customerId: 'cus_123',
-      paymentMethodId: 'pm_123',
-      planKey: 'PROFESSIONAL',
-      trialEnd: trialEndsAt,
+    expect(mockStripeService.createCustomer).toHaveBeenCalledWith(expect.objectContaining({
+      companyId: 'company-1',
+      userId: 'user-1',
     }));
-    expect(result.status).toBe('TRIAL');
-    jest.useRealTimers();
+    expect(mockStripeService.createCheckoutSession).toHaveBeenCalledWith(expect.objectContaining({
+      companyId: 'company-1',
+      userId: 'user-1',
+      localSubscriptionId: 'sub-local-1',
+      planKey: 'PROFESSIONAL',
+    }));
+    expect(result).toEqual({
+      checkoutSessionId: 'cs_test_123',
+      checkoutUrl: 'https://checkout.stripe.com/test/cs_test_123',
+    });
   });
 
-  test('marca invoice paga como ACTIVE', async () => {
+  test('blocks duplicate checkout when company already has Stripe-managed subscription', async () => {
+    mockPrisma.company.findUnique.mockResolvedValue({
+      id: 'company-1',
+      name: 'Empresa Teste',
+      plan: 'professional',
+      stripeCustomerId: 'cus_123',
+    });
+    mockPrisma.user.findFirst.mockResolvedValue({
+      id: 'user-1',
+      companyId: 'company-1',
+      email: 'admin@empresa.com',
+      name: 'Admin',
+    });
     mockPrisma.subscription.findFirst.mockResolvedValue({
-      id: 'sub-local',
+      id: 'sub-local-1',
       companyId: 'company-1',
       plan: 'PROFESSIONAL',
-      status: 'TRIAL',
+      status: 'ACTIVE',
+      stripeSubscriptionId: 'sub_stripe_123',
+    });
+
+    await expect(
+      billingService.createCheckoutSession({
+        companyId: 'company-1',
+        userId: 'user-1',
+        plan: 'PROFESSIONAL',
+      })
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  test('syncs invoice and subscription status from Stripe webhook', async () => {
+    const localSubscription = {
+      id: 'sub-local-1',
+      companyId: 'company-1',
+      plan: 'PROFESSIONAL',
+      status: 'INCOMPLETE',
+      stripeCustomerId: 'cus_123',
+    };
+
+    mockPrisma.subscription.findUnique.mockImplementation(async ({ where }) => {
+      if (where?.stripeSubscriptionId === 'sub_stripe_123') return localSubscription;
+      if (where?.id === 'sub-local-1') return localSubscription;
+      return null;
     });
     mockPrisma.payment.upsert.mockResolvedValue({});
+    mockStripeService.retrieveSubscription.mockResolvedValue({
+      id: 'sub_stripe_123',
+      status: 'active',
+      customer: 'cus_123',
+      current_period_start: 1712198400,
+      current_period_end: 1714790400,
+      cancel_at_period_end: false,
+      items: { data: [{ price: { id: process.env.STRIPE_PRICE_PROFESSIONAL || 'price_professional_xxx' } }] },
+      default_payment_method: { id: 'pm_123' },
+      latest_invoice: { id: 'in_123' },
+      metadata: { companyId: 'company-1', localSubscriptionId: 'sub-local-1', planKey: 'PROFESSIONAL' },
+    });
     mockPrisma.subscription.update.mockResolvedValue({
-      id: 'sub-local',
-      companyId: 'company-1',
+      ...localSubscription,
       status: 'ACTIVE',
-      plan: 'PROFESSIONAL',
+      billingStatus: 'PAID',
     });
     mockPrisma.company.update.mockResolvedValue({});
 
     await billingService.handleStripeInvoiceEvent({
       id: 'in_123',
-      payment_intent: 'pi_123',
       subscription: 'sub_stripe_123',
+      customer: 'cus_123',
       status: 'paid',
       paid: true,
       amount_paid: 9900,
-      lines: { data: [{ period: { end: Math.floor(Date.now() / 1000) + 2592000 } }] },
-    });
+    }, 'invoice.paid');
 
     expect(mockPrisma.payment.upsert).toHaveBeenCalled();
     expect(mockPrisma.subscription.update).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ status: 'ACTIVE' }),
+      data: expect.objectContaining({
+        status: 'ACTIVE',
+        billingStatus: 'PAID',
+      }),
     }));
-  });
-
-  test('marca assinatura como PAST_DUE em invoice falha', async () => {
-    mockPrisma.subscription.findFirst.mockResolvedValue({
-      id: 'sub-local',
-      companyId: 'company-1',
-      plan: 'PROFESSIONAL',
-      status: 'ACTIVE',
-    });
-    mockPrisma.payment.upsert.mockResolvedValue({});
-    mockPrisma.subscription.update.mockResolvedValue({
-      id: 'sub-local',
-      companyId: 'company-1',
-      status: 'PAST_DUE',
-      plan: 'PROFESSIONAL',
-    });
-    mockPrisma.company.update.mockResolvedValue({});
-
-    await billingService.handleStripeInvoiceEvent({
-      id: 'in_123',
-      payment_intent: 'pi_123',
-      subscription: 'sub_stripe_123',
-      status: 'open',
-      paid: false,
-      amount_due: 9900,
-    });
-
-    expect(mockPrisma.subscription.update).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ status: 'PAST_DUE' }),
+    expect(mockPrisma.company.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        subscriptionStatus: 'ACTIVE',
+        billingStatus: 'PAID',
+      }),
     }));
   });
 });

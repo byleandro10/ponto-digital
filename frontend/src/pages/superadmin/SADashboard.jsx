@@ -113,7 +113,7 @@ export default function SADashboard() {
                     <td className="py-3">
                       <span className={`text-xs px-2 py-1 rounded-full font-bold ${
                         c.subscription?.status === 'ACTIVE' ? 'bg-green-900/30 text-green-400' :
-                        c.subscription?.status === 'TRIAL' ? 'bg-blue-900/30 text-blue-400' :
+                        c.subscription?.status === 'TRIALING' ? 'bg-blue-900/30 text-blue-400' :
                         'bg-gray-800 text-gray-400'
                       }`}>
                         {c.subscription?.status || 'N/A'}

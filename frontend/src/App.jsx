@@ -1,10 +1,10 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import InstallPWA from './components/InstallPWA';
+import { hasBillingAccess } from './utils/billing';
 
-// Lazy loading para performance
 const Landing = lazy(() => import('./pages/Landing'));
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
@@ -28,26 +28,40 @@ const SACompanies = lazy(() => import('./pages/superadmin/SACompanies'));
 const SARevenue = lazy(() => import('./pages/superadmin/SARevenue'));
 const SAUsage = lazy(() => import('./pages/superadmin/SAUsage'));
 
-const LoadingSpinner = () => (
-  <div className="min-h-screen flex items-center justify-center">
-    <div className="animate-spin w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full" />
-  </div>
-);
+function LoadingSpinner() {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+    </div>
+  );
+}
 
-function PrivateRoute({ children, type, allowExpired }) {
+function PrivateRoute({ children, type, allowInactiveBilling = false }) {
   const { signed, user, loading } = useAuth();
+
   if (loading) return <LoadingSpinner />;
   if (!signed) return <Navigate to="/login" />;
-  if (type === 'super_admin' && user?.role !== 'SUPER_ADMIN') return <Navigate to="/admin/dashboard" />;
-  if (type && type !== 'super_admin' && user?.type !== type) return <Navigate to={user?.role === 'SUPER_ADMIN' ? '/super-admin/dashboard' : user?.type === 'admin' ? '/admin/dashboard' : '/employee/punch'} />;
 
-  // Admin com assinatura inativa só pode acessar /admin/subscription
-  if (type === 'admin' && !allowExpired && user?.role !== 'SUPER_ADMIN') {
-    const status = user?.subscriptionStatus;
-    const trialExpired = status === 'TRIAL' && user?.trialEndsAt && new Date(user.trialEndsAt) < new Date();
-    if (['CANCELLED', 'EXPIRED', 'PAST_DUE'].includes(status) || trialExpired) {
-      return <Navigate to="/admin/subscription" />;
-    }
+  if (type === 'super_admin' && user?.role !== 'SUPER_ADMIN') {
+    return <Navigate to="/admin/dashboard" />;
+  }
+
+  if (type && type !== 'super_admin' && user?.type !== type) {
+    return (
+      <Navigate
+        to={
+          user?.role === 'SUPER_ADMIN'
+            ? '/super-admin/dashboard'
+            : user?.type === 'admin'
+              ? '/admin/dashboard'
+              : '/employee/punch'
+        }
+      />
+    );
+  }
+
+  if (type === 'admin' && !allowInactiveBilling && user?.role !== 'SUPER_ADMIN' && !hasBillingAccess(user?.subscriptionStatus)) {
+    return <Navigate to="/admin/subscription" />;
   }
 
   return children;
@@ -56,11 +70,10 @@ function PrivateRoute({ children, type, allowExpired }) {
 function AppRoutes() {
   const { signed, user } = useAuth();
 
-  // Admin com assinatura inativa vai direto para /admin/subscription
-  const subscriptionInactive = user?.type === 'admin' && user?.role !== 'SUPER_ADMIN' && (
-    ['CANCELLED', 'EXPIRED', 'PAST_DUE'].includes(user?.subscriptionStatus) ||
-    (user?.subscriptionStatus === 'TRIAL' && user?.trialEndsAt && new Date(user.trialEndsAt) < new Date())
-  );
+  const subscriptionInactive = user?.type === 'admin'
+    && user?.role !== 'SUPER_ADMIN'
+    && !hasBillingAccess(user?.subscriptionStatus);
+
   const defaultRedirect = user?.role === 'SUPER_ADMIN'
     ? '/super-admin/dashboard'
     : user?.type === 'admin'
@@ -88,7 +101,7 @@ function AppRoutes() {
         <Route path="/admin/geofences" element={<PrivateRoute type="admin"><Geofences /></PrivateRoute>} />
         <Route path="/admin/settings" element={<PrivateRoute type="admin"><Settings /></PrivateRoute>} />
         <Route path="/admin/punch-map" element={<PrivateRoute type="admin"><PunchMapPage /></PrivateRoute>} />
-        <Route path="/admin/subscription" element={<PrivateRoute type="admin" allowExpired><AdminSubscription /></PrivateRoute>} />
+        <Route path="/admin/subscription" element={<PrivateRoute type="admin" allowInactiveBilling><AdminSubscription /></PrivateRoute>} />
         <Route path="/super-admin/dashboard" element={<PrivateRoute type="super_admin"><SADashboard /></PrivateRoute>} />
         <Route path="/super-admin/companies" element={<PrivateRoute type="super_admin"><SACompanies /></PrivateRoute>} />
         <Route path="/super-admin/revenue" element={<PrivateRoute type="super_admin"><SARevenue /></PrivateRoute>} />

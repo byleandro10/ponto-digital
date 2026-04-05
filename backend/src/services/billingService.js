@@ -2,183 +2,135 @@ const prisma = require('../config/database');
 const stripeService = require('./stripeService');
 const {
   TRIAL_DAYS,
-  GRACE_PERIOD_DAYS,
   PLAN_PRICES,
   PLAN_NAMES,
   BILLING_STATUS,
+  SUBSCRIPTION_STATUS,
   normalizePlanKey,
+  getPlanConfig,
+  getPlanFromStripePriceId,
+  mapStripeSubscriptionStatus,
+  mapSubscriptionStatusToBillingStatus,
+  isSubscriptionActive,
+  isSubscriptionRecoverable,
 } = require('../config/billingConfig');
 
-const MANAGED_STATUSES = [
-  BILLING_STATUS.TRIAL,
-  BILLING_STATUS.ACTIVE,
-  BILLING_STATUS.PAST_DUE,
-  BILLING_STATUS.PAUSED,
-];
-
-function addDays(date, days) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
-function addMonths(date, months) {
-  const next = new Date(date);
-  next.setMonth(next.getMonth() + months);
-  return next;
-}
-
-function toDateOrNull(value) {
+function toDate(value) {
   if (!value) return null;
   return value instanceof Date ? value : new Date(value);
 }
 
-function safeString(value) {
+function fromStripeTimestamp(value) {
   if (!value) return null;
+  return new Date(Number(value) * 1000);
+}
+
+function asString(value) {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object' && value.id) return String(value.id);
   return String(value);
 }
 
-function getLatestPriceId(stripeSubscription) {
-  return stripeSubscription?.items?.data?.[0]?.price?.id || null;
+function computeTrialDaysLeft(trialEndsAt) {
+  if (!trialEndsAt) return 0;
+  const diff = new Date(trialEndsAt).getTime() - Date.now();
+  return Math.max(0, Math.ceil(diff / 86400000));
 }
 
-function getLatestPaymentIntent(stripeSubscription) {
-  return stripeSubscription?.latest_invoice?.payment_intent || null;
+function getStripePriceId(stripeSubscription) {
+  return asString(stripeSubscription?.items?.data?.[0]?.price?.id || null);
 }
 
-function getLatestInvoiceId(stripeSubscription) {
-  return safeString(stripeSubscription?.latest_invoice?.id || stripeSubscription?.latest_invoice || null);
-}
-
-function getTrialState(company, subscription, now = new Date()) {
-  const trialEndsAt = subscription?.trialEndsAt || company.trialEndsAt;
-  const trialStillOpen = trialEndsAt && new Date(trialEndsAt) > now;
-  const isTrialActive = Boolean(
-    (company.subscriptionStatus === BILLING_STATUS.TRIAL || subscription?.status === BILLING_STATUS.TRIAL) &&
-    trialStillOpen
+function getStripePaymentMethodId(stripeSubscription) {
+  return asString(
+    stripeSubscription?.default_payment_method?.id
+      || stripeSubscription?.default_payment_method
+      || stripeSubscription?.latest_invoice?.payment_intent?.payment_method
+      || null
   );
-
-  return {
-    trialEndsAt: trialStillOpen ? new Date(trialEndsAt) : null,
-    isTrialActive,
-  };
 }
 
-function mapStripeSubscriptionStatus(status, trialEndsAt, now = new Date()) {
-  const normalized = String(status || '').toLowerCase();
-  if (normalized === 'trialing') return BILLING_STATUS.TRIAL;
-  if (normalized === 'active') {
-    if (trialEndsAt && new Date(trialEndsAt) > now) {
-      return BILLING_STATUS.TRIAL;
-    }
-    return BILLING_STATUS.ACTIVE;
-  }
-  if (['past_due', 'unpaid', 'incomplete'].includes(normalized)) return BILLING_STATUS.PAST_DUE;
-  if (normalized === 'paused') return BILLING_STATUS.PAUSED;
-  if (['canceled', 'incomplete_expired'].includes(normalized)) return BILLING_STATUS.CANCELLED;
-  return BILLING_STATUS.EXPIRED;
+function getStripeInvoiceId(stripeSubscription) {
+  return asString(stripeSubscription?.latest_invoice?.id || stripeSubscription?.latest_invoice || null);
 }
 
-function mapInvoiceStatus(invoice) {
-  if (invoice.paid || invoice.status === 'paid') return 'APPROVED';
-  if (['draft', 'open', 'uncollectible'].includes(invoice.status)) return 'PENDING';
-  if (['void', 'deleted'].includes(invoice.status)) return 'REJECTED';
-  return 'REJECTED';
+function resolvePlanKey({ explicitPlan, stripeSubscription, fallbackPlan }) {
+  const priceId = getStripePriceId(stripeSubscription);
+  const fromPrice = getPlanFromStripePriceId(priceId);
+  if (fromPrice) return fromPrice.key;
+
+  return normalizePlanKey(
+    explicitPlan
+      || stripeSubscription?.metadata?.planKey
+      || fallbackPlan
+      || 'BASIC'
+  );
 }
 
-function mapPaymentIntentStatus(status) {
-  const normalized = String(status || '').toLowerCase();
-  if (normalized === 'succeeded') return 'APPROVED';
-  if (['processing', 'requires_confirmation', 'requires_capture', 'requires_action'].includes(normalized)) return 'PENDING';
-  return 'REJECTED';
+function mapInvoicePaymentStatus(invoice) {
+  const normalized = String(invoice?.status || '').toLowerCase();
+
+  if (invoice?.paid || normalized === 'paid') return 'PAID';
+  if (['open', 'draft'].includes(normalized)) return 'PENDING';
+  if (['uncollectible'].includes(normalized) || invoice?.attempted) return 'FAILED';
+  if (normalized === 'void') return 'VOID';
+  return 'PENDING';
 }
 
-function normalizeLegacyFields(data = {}) {
-  return {
-    ...data,
-    ...(Object.prototype.hasOwnProperty.call(data, 'stripeSubscriptionId')
-      ? { mpPreapprovalId: data.stripeSubscriptionId }
-      : {}),
-    ...(Object.prototype.hasOwnProperty.call(data, 'stripeCustomerId')
-      ? { mpCustomerId: data.stripeCustomerId }
-      : {}),
-  };
+function mapInvoiceBillingStatus(invoice, eventType = null) {
+  if (eventType === 'invoice.paid') return BILLING_STATUS.PAID;
+  if (eventType === 'invoice.payment_failed') return BILLING_STATUS.PAST_DUE;
+  if (eventType === 'invoice.finalized') return BILLING_STATUS.PENDING;
+
+  const normalized = String(invoice?.status || '').toLowerCase();
+
+  if (invoice?.paid || normalized === 'paid') return BILLING_STATUS.PAID;
+  if (normalized === 'open') return BILLING_STATUS.PENDING;
+  if (normalized === 'uncollectible') return BILLING_STATUS.UNPAID;
+  if (normalized === 'void') return BILLING_STATUS.CANCELED;
+  return BILLING_STATUS.PENDING;
 }
 
-function buildSubscriptionWriteModel({
-  plan,
-  stripeCustomerId,
-  stripeSubscription,
-  trialEndsAtOverride,
-  setupIntentId,
-  now = new Date(),
-}) {
-  const paymentIntent = getLatestPaymentIntent(stripeSubscription);
-  const trialEndsAt = trialEndsAtOverride
-    || (stripeSubscription?.trial_end ? new Date(stripeSubscription.trial_end * 1000) : null);
-  const status = mapStripeSubscriptionStatus(stripeSubscription.status, trialEndsAt, now);
+function formatSubscriptionResponse(subscription, companyPlan) {
+  if (!subscription) return null;
 
-  return normalizeLegacyFields({
-    plan,
-    status,
-    trialEndsAt: status === BILLING_STATUS.TRIAL ? trialEndsAt : null,
-    currentPeriodStart: stripeSubscription.current_period_start
-      ? new Date(stripeSubscription.current_period_start * 1000)
-      : now,
-    currentPeriodEnd: stripeSubscription.current_period_end
-      ? new Date(stripeSubscription.current_period_end * 1000)
-      : (trialEndsAt || addMonths(now, 1)),
-    gracePeriodEnd: status === BILLING_STATUS.PAST_DUE ? addDays(now, GRACE_PERIOD_DAYS) : null,
-    stripeCustomerId,
-    stripeSubscriptionId: stripeSubscription.id,
-    stripePriceId: getLatestPriceId(stripeSubscription),
-    stripePaymentMethodId: safeString(stripeSubscription.default_payment_method || null),
-    stripeLatestInvoiceId: getLatestInvoiceId(stripeSubscription),
-    stripeSetupIntentId: setupIntentId || null,
-    cancelledAt: status === BILLING_STATUS.CANCELLED ? new Date() : null,
-    ...(paymentIntent ? { stripeLatestInvoiceId: safeString(paymentIntent.invoice || getLatestInvoiceId(stripeSubscription)) } : {}),
-  });
-}
-
-function formatSubscriptionResponse(subscription) {
-  const now = new Date();
-  const trialDaysLeft = subscription.trialEndsAt
-    ? Math.max(0, Math.ceil((new Date(subscription.trialEndsAt) - now) / 86400000))
-    : 0;
+  const planKey = normalizePlanKey(subscription.plan || companyPlan || 'BASIC');
+  const trialEndsAt = subscription.trialEndsAt || null;
 
   return {
     id: subscription.id,
-    plan: subscription.plan,
-    planName: PLAN_NAMES[subscription.plan] || subscription.plan,
+    plan: planKey,
+    planSlug: getPlanConfig(planKey).slug,
+    planName: PLAN_NAMES[planKey],
+    planPrice: PLAN_PRICES[planKey],
     status: subscription.status,
+    billingStatus: subscription.billingStatus,
     trialStart: subscription.trialStart,
-    trialEndsAt: subscription.trialEndsAt,
-    trialDaysLeft,
+    trialEndsAt,
+    trialDaysLeft: computeTrialDaysLeft(trialEndsAt),
     currentPeriodStart: subscription.currentPeriodStart,
     currentPeriodEnd: subscription.currentPeriodEnd,
-    gracePeriodEnd: subscription.gracePeriodEnd,
-    createdAt: subscription.createdAt,
-    stripeSubscriptionId: subscription.stripeSubscriptionId || subscription.mpPreapprovalId,
-    stripeCustomerId: subscription.stripeCustomerId || subscription.mpCustomerId,
-    stripePriceId: subscription.stripePriceId || null,
-    stripePaymentMethodId: subscription.stripePaymentMethodId || null,
-    stripeLatestInvoiceId: subscription.stripeLatestInvoiceId || null,
+    cancelAtPeriodEnd: Boolean(subscription.cancelAtPeriodEnd),
+    cancelledAt: subscription.cancelledAt,
+    stripeCustomerId: subscription.stripeCustomerId,
+    stripeSubscriptionId: subscription.stripeSubscriptionId,
+    stripePriceId: subscription.stripePriceId,
+    stripePaymentMethodId: subscription.stripePaymentMethodId,
+    stripeCheckoutSessionId: subscription.stripeCheckoutSessionId,
+    lastInvoiceId: subscription.lastInvoiceId,
+    portalEligible: Boolean(subscription.stripeCustomerId),
   };
 }
 
 async function getCompany(companyId) {
   const company = await prisma.company.findUnique({ where: { id: companyId } });
+
   if (!company) {
     throw new BillingError('Empresa nao encontrada.', 404);
   }
-  return company;
-}
 
-async function getLatestSubscription(companyId) {
-  return prisma.subscription.findFirst({
-    where: { companyId },
-    orderBy: { createdAt: 'desc' },
-  });
+  return company;
 }
 
 async function getBillingUser({ companyId, userId }) {
@@ -194,363 +146,34 @@ async function getBillingUser({ companyId, userId }) {
   return user;
 }
 
-function assertPaymentMethod(paymentMethodId) {
-  if (!paymentMethodId) {
-    throw new BillingError('Metodo de pagamento da Stripe e obrigatorio.', 400);
-  }
-}
-
-async function createOrReuseCustomer({ company, billingUser, latestSubscription }) {
-  const existingCustomerId = latestSubscription?.stripeCustomerId || latestSubscription?.mpCustomerId || null;
-  if (existingCustomerId) {
-    await stripeService.updateCustomer(existingCustomerId, {
-      email: billingUser.email,
-      name: billingUser.name,
-      metadata: {
-        companyId: company.id,
-        companyName: company.name,
-      },
-    });
-    return existingCustomerId;
-  }
-
-  const stripeCustomer = await stripeService.createCustomer({
-    email: billingUser.email,
-    name: billingUser.name,
-    companyId: company.id,
-    companyName: company.name,
-  });
-
-  return stripeCustomer.id;
-}
-
-async function ensureLocalSubscriptionRecord({ companyId, plan, latestSubscription, trialEndsAt, createNew = false }) {
-  const now = new Date();
-  const shouldReuse = !createNew
-    && latestSubscription
-    && !latestSubscription.stripeSubscriptionId
-    && !latestSubscription.mpPreapprovalId
-    && [BILLING_STATUS.TRIAL, BILLING_STATUS.EXPIRED, BILLING_STATUS.CANCELLED].includes(latestSubscription.status);
-
-  if (shouldReuse) {
-    return prisma.subscription.update({
-      where: { id: latestSubscription.id },
-      data: {
-        plan,
-        status: trialEndsAt ? BILLING_STATUS.TRIAL : BILLING_STATUS.PAST_DUE,
-        trialStart: latestSubscription.trialStart || now,
-        trialEndsAt,
-        currentPeriodStart: now,
-        currentPeriodEnd: trialEndsAt || addMonths(now, 1),
-        gracePeriodEnd: null,
-        cancelledAt: null,
-      },
-    });
-  }
-
-  return prisma.subscription.create({
-    data: {
-      companyId,
-      plan,
-      status: trialEndsAt ? BILLING_STATUS.TRIAL : BILLING_STATUS.PAST_DUE,
-      trialStart: trialEndsAt ? now : null,
-      trialEndsAt,
-      currentPeriodStart: now,
-      currentPeriodEnd: trialEndsAt || addMonths(now, 1),
-      gracePeriodEnd: null,
-      cancelledAt: null,
-    },
-  });
-}
-
-async function syncSubscriptionAndCompany(subscriptionId, companyId, data) {
-  return prisma.$transaction(async (tx) => {
-    const updatedSubscription = await tx.subscription.update({
-      where: { id: subscriptionId },
-      data: normalizeLegacyFields(data),
-    });
-
-    await tx.company.update({
-      where: { id: companyId },
-      data: {
-        plan: updatedSubscription.plan.toLowerCase(),
-        subscriptionStatus: updatedSubscription.status,
-        trialEndsAt: updatedSubscription.trialEndsAt,
-      },
-    });
-
-    return updatedSubscription;
-  });
-}
-
-async function saveStripeSubscription({
-  localSubscription,
-  companyId,
-  plan,
-  stripeCustomerId,
-  stripeSubscription,
-  trialEndsAt,
-  setupIntentId,
-}) {
-  const writeModel = buildSubscriptionWriteModel({
-    plan,
-    stripeCustomerId,
-    stripeSubscription,
-    trialEndsAtOverride: trialEndsAt,
-    setupIntentId,
-  });
-
-  const updatedSubscription = await syncSubscriptionAndCompany(localSubscription.id, companyId, {
-    ...writeModel,
-    trialStart: localSubscription.trialStart || new Date(),
-  });
-
-  return formatSubscriptionResponse(updatedSubscription);
-}
-
-async function ensurePaymentMethodAttached({ customerId, paymentMethodId }) {
-  await stripeService.attachPaymentMethod({
-    customerId,
-    paymentMethodId,
-  });
-
-  const paymentMethod = await stripeService.retrievePaymentMethod(paymentMethodId);
-  if (paymentMethod.customer && String(paymentMethod.customer) !== String(customerId)) {
-    throw new BillingError('O metodo de pagamento informado pertence a outro cliente da Stripe.', 409);
-  }
-
-  return paymentMethod;
-}
-
-async function createSubscription({ companyId, userId, plan, paymentMethodId, setupIntentId = null }) {
-  const planKey = normalizePlanKey(plan);
-  assertPaymentMethod(paymentMethodId);
-
-  const [company, latestSubscription, billingUser] = await Promise.all([
-    getCompany(companyId),
-    getLatestSubscription(companyId),
-    getBillingUser({ companyId, userId }),
-  ]);
-
-  if (latestSubscription?.stripeSubscriptionId && MANAGED_STATUSES.includes(latestSubscription.status)) {
-    throw new BillingError('A empresa ja possui uma assinatura ativa ou em cobranca na Stripe.', 409);
-  }
-
-  const now = new Date();
-  const { isTrialActive, trialEndsAt } = getTrialState(company, latestSubscription, now);
-  const localSubscription = await ensureLocalSubscriptionRecord({
-    companyId,
-    plan: planKey,
-    latestSubscription,
-    trialEndsAt: isTrialActive ? trialEndsAt : null,
-  });
-
-  try {
-    const stripeCustomerId = await createOrReuseCustomer({ company, billingUser, latestSubscription });
-    await ensurePaymentMethodAttached({ customerId: stripeCustomerId, paymentMethodId });
-
-    const stripeSubscription = await stripeService.createSubscription({
-      customerId: stripeCustomerId,
-      paymentMethodId,
-      planKey,
-      trialEnd: isTrialActive ? trialEndsAt : null,
-      metadata: {
-        companyId,
-        localSubscriptionId: localSubscription.id,
-        plan: planKey,
-      },
-    });
-
-    return saveStripeSubscription({
-      localSubscription,
-      companyId,
-      plan: planKey,
-      stripeCustomerId,
-      stripeSubscription,
-      trialEndsAt: isTrialActive ? trialEndsAt : null,
-      setupIntentId,
-    });
-  } catch (error) {
-    throw new BillingError(`Falha ao criar assinatura na Stripe: ${error.message}`, 422);
-  }
-}
-
-async function changePlan({ companyId, userId, plan, paymentMethodId, setupIntentId = null }) {
-  const planKey = normalizePlanKey(plan);
-  assertPaymentMethod(paymentMethodId);
-
-  const [company, subscription, billingUser] = await Promise.all([
-    getCompany(companyId),
-    getLatestSubscription(companyId),
-    getBillingUser({ companyId, userId }),
-  ]);
-
-  if (!subscription) {
-    throw new BillingError('Nenhuma assinatura encontrada para alterar o plano.', 404);
-  }
-
-  if (!subscription.stripeSubscriptionId && !subscription.mpPreapprovalId) {
-    return {
-      message: `Plano ${PLAN_NAMES[planKey]} configurado com sucesso.`,
-      subscription: await createSubscription({ companyId, userId, plan: planKey, paymentMethodId, setupIntentId }),
-    };
-  }
-
-  const stripeSubscriptionId = subscription.stripeSubscriptionId || subscription.mpPreapprovalId;
-  const stripeCustomerId = subscription.stripeCustomerId || subscription.mpCustomerId;
-  const { isTrialActive, trialEndsAt } = getTrialState(company, subscription);
-
-  try {
-    const customerId = stripeCustomerId || await createOrReuseCustomer({ company, billingUser, latestSubscription: subscription });
-    await ensurePaymentMethodAttached({ customerId, paymentMethodId });
-
-    const updatedStripeSubscription = await stripeService.updateSubscription({
-      subscriptionId: stripeSubscriptionId,
-      paymentMethodId,
-      planKey,
-      trialEnd: isTrialActive ? trialEndsAt : null,
-      metadata: {
-        companyId,
-        localSubscriptionId: subscription.id,
-        plan: planKey,
-      },
-    });
-
-    const savedSubscription = await saveStripeSubscription({
-      localSubscription: subscription,
-      companyId,
-      plan: planKey,
-      stripeCustomerId: customerId,
-      stripeSubscription: updatedStripeSubscription,
-      trialEndsAt: isTrialActive ? trialEndsAt : null,
-      setupIntentId,
-    });
-
-    return {
-      message: `Plano alterado para ${PLAN_NAMES[planKey]} com sucesso.`,
-      subscription: savedSubscription,
-    };
-  } catch (error) {
-    throw new BillingError(`Falha ao atualizar assinatura na Stripe: ${error.message}`, 422);
-  }
-}
-
-async function reactivateSubscription({ companyId, userId, paymentMethodId, plan, setupIntentId = null }) {
-  const planKey = normalizePlanKey(plan);
-  assertPaymentMethod(paymentMethodId);
-
-  const subscription = await getLatestSubscription(companyId);
-  const stripeSubscriptionId = subscription?.stripeSubscriptionId || subscription?.mpPreapprovalId || null;
-
-  if (subscription && MANAGED_STATUSES.includes(subscription.status)) {
-    throw new BillingError('A empresa ja possui uma assinatura gerenciada ativa na Stripe.', 409);
-  }
-
-  if (stripeSubscriptionId && ![BILLING_STATUS.CANCELLED, BILLING_STATUS.EXPIRED].includes(subscription.status)) {
-    try {
-      await stripeService.cancelSubscription(stripeSubscriptionId);
-    } catch (error) {
-      throw new BillingError(`Falha ao encerrar a assinatura anterior na Stripe: ${error.message}`, 422);
-    }
-  }
-
-  const nextSubscription = await createSubscription({
-    companyId,
-    userId,
-    plan: planKey,
-    paymentMethodId,
-    setupIntentId,
-  });
-
-  return {
-    message: `Assinatura reativada com sucesso no plano ${PLAN_NAMES[planKey]}.`,
-    subscription: nextSubscription,
-  };
-}
-
-async function cancelSubscription(companyId) {
-  const subscription = await getLatestSubscription(companyId);
-  if (!subscription || [BILLING_STATUS.CANCELLED, BILLING_STATUS.EXPIRED].includes(subscription.status)) {
-    throw new BillingError('Nenhuma assinatura ativa encontrada.', 404);
-  }
-
-  const stripeSubscriptionId = subscription.stripeSubscriptionId || subscription.mpPreapprovalId || null;
-
-  if (stripeSubscriptionId) {
-    try {
-      await stripeService.cancelSubscription(stripeSubscriptionId);
-    } catch (error) {
-      throw new BillingError(`Falha ao cancelar assinatura na Stripe: ${error.message}`, 422);
-    }
-  }
-
-  await syncSubscriptionAndCompany(subscription.id, companyId, {
-    status: BILLING_STATUS.CANCELLED,
-    cancelledAt: new Date(),
-    gracePeriodEnd: null,
-  });
-
-  return { message: 'Assinatura cancelada com sucesso.' };
-}
-
-async function getSubscriptionStatus(companyId) {
-  await reconcileCompanyBillingState(companyId);
-
-  const subscription = await getLatestSubscription(companyId);
-  if (!subscription) {
-    const company = await prisma.company.findUnique({
-      where: { id: companyId },
-      select: { plan: true, subscriptionStatus: true, trialEndsAt: true, createdAt: true },
-    });
-    if (!company) return null;
-
-    const planKey = normalizePlanKey(company.plan);
-    return {
-      id: null,
-      plan: planKey,
-      planName: PLAN_NAMES[planKey],
-      status: company.subscriptionStatus,
-      trialEndsAt: company.trialEndsAt,
-      trialDaysLeft: company.trialEndsAt ? Math.max(0, Math.ceil((new Date(company.trialEndsAt) - new Date()) / 86400000)) : 0,
-      currentPeriodStart: company.createdAt,
-      currentPeriodEnd: company.trialEndsAt,
-      gracePeriodEnd: null,
-      createdAt: company.createdAt,
-      stripeSubscriptionId: null,
-      stripeCustomerId: null,
-      stripePriceId: null,
-      stripePaymentMethodId: null,
-      stripeLatestInvoiceId: null,
-    };
-  }
-
-  return formatSubscriptionResponse(subscription);
-}
-
-async function listPayments(companyId, limit = 50) {
-  return prisma.payment.findMany({
+async function getLatestSubscription(companyId) {
+  return prisma.subscription.findFirst({
     where: { companyId },
     orderBy: { createdAt: 'desc' },
-    take: limit,
   });
 }
 
-async function findSubscriptionByStripeReferences({ stripeSubscriptionId, localSubscriptionId, companyId, stripeCustomerId }) {
+async function findSubscriptionByStripeReferences({ stripeSubscriptionId, stripeCustomerId, checkoutSessionId, localSubscriptionId, companyId }) {
   if (stripeSubscriptionId) {
-    const byStripe = await prisma.subscription.findFirst({
-      where: {
-        OR: [
-          { stripeSubscriptionId: String(stripeSubscriptionId) },
-          { mpPreapprovalId: String(stripeSubscriptionId) },
-        ],
-      },
+    const byStripeId = await prisma.subscription.findUnique({
+      where: { stripeSubscriptionId: String(stripeSubscriptionId) },
     });
-    if (byStripe) return byStripe;
+    if (byStripeId) return byStripeId;
+  }
+
+  if (checkoutSessionId) {
+    const byCheckoutSession = await prisma.subscription.findFirst({
+      where: { stripeCheckoutSessionId: String(checkoutSessionId) },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (byCheckoutSession) return byCheckoutSession;
   }
 
   if (localSubscriptionId) {
-    const byLocal = await prisma.subscription.findUnique({ where: { id: String(localSubscriptionId) } });
-    if (byLocal) return byLocal;
+    const byLocalId = await prisma.subscription.findUnique({
+      where: { id: String(localSubscriptionId) },
+    });
+    if (byLocalId) return byLocalId;
   }
 
   if (companyId) {
@@ -563,12 +186,7 @@ async function findSubscriptionByStripeReferences({ stripeSubscriptionId, localS
 
   if (stripeCustomerId) {
     return prisma.subscription.findFirst({
-      where: {
-        OR: [
-          { stripeCustomerId: String(stripeCustomerId) },
-          { mpCustomerId: String(stripeCustomerId) },
-        ],
-      },
+      where: { stripeCustomerId: String(stripeCustomerId) },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -576,190 +194,456 @@ async function findSubscriptionByStripeReferences({ stripeSubscriptionId, localS
   return null;
 }
 
-async function upsertInvoicePayment(invoice, subscription) {
-  const paymentIntentId = safeString(invoice.payment_intent?.id || invoice.payment_intent || null);
-  const invoiceId = safeString(invoice.id);
-  const paymentMethodId = safeString(invoice.default_payment_method || invoice.payment_settings?.default_payment_method || null);
-  const amount = Number((invoice.amount_paid ?? invoice.amount_due ?? 0) / 100);
-  const paidAt = invoice.status === 'paid'
-    ? new Date((invoice.status_transitions?.paid_at || Math.floor(Date.now() / 1000)) * 1000)
-    : null;
-  const failureReason = invoice.last_payment_error?.message || invoice.last_finalization_error?.message || null;
-  const where = paymentIntentId
-    ? { stripePaymentIntentId: paymentIntentId }
-    : { mpPaymentId: invoiceId };
+async function ensureStripeCustomer({ company, billingUser }) {
+  if (company.stripeCustomerId) {
+    await stripeService.updateCustomer(company.stripeCustomerId, {
+      email: billingUser.email,
+      name: billingUser.name,
+      metadata: {
+        companyId: company.id,
+        companyName: company.name,
+        userId: billingUser.id,
+      },
+    });
 
-  return prisma.payment.upsert({
-    where,
-    create: {
-      subscriptionId: subscription.id,
-      companyId: subscription.companyId,
-      stripePaymentIntentId: paymentIntentId,
-      stripeInvoiceId: invoiceId,
-      stripePaymentMethodId: paymentMethodId,
-      mpPaymentId: invoiceId,
-      amount,
-      status: mapInvoiceStatus(invoice),
-      paidAt,
-      failureReason,
-    },
-    update: {
-      stripeInvoiceId: invoiceId,
-      stripePaymentMethodId: paymentMethodId,
-      amount,
-      status: mapInvoiceStatus(invoice),
-      paidAt,
-      failureReason,
+    return company.stripeCustomerId;
+  }
+
+  const stripeCustomer = await stripeService.createCustomer({
+    email: billingUser.email,
+    name: billingUser.name,
+    companyId: company.id,
+    companyName: company.name,
+    userId: billingUser.id,
+  });
+
+  await prisma.company.update({
+    where: { id: company.id },
+    data: { stripeCustomerId: stripeCustomer.id },
+  });
+
+  return stripeCustomer.id;
+}
+
+async function ensureCheckoutPlaceholderSubscription({ companyId, planKey, latestSubscription }) {
+  if (latestSubscription && !latestSubscription.stripeSubscriptionId && latestSubscription.status === SUBSCRIPTION_STATUS.INCOMPLETE) {
+    return prisma.subscription.update({
+      where: { id: latestSubscription.id },
+      data: {
+        plan: planKey,
+        billingStatus: BILLING_STATUS.INCOMPLETE,
+        status: SUBSCRIPTION_STATUS.INCOMPLETE,
+        trialStart: null,
+        trialEndsAt: null,
+        currentPeriodStart: null,
+        currentPeriodEnd: null,
+        cancelAtPeriodEnd: false,
+        cancelledAt: null,
+        stripePriceId: null,
+        stripePaymentMethodId: null,
+        stripeSubscriptionId: null,
+        stripeCheckoutSessionId: null,
+        lastInvoiceId: null,
+      },
+    });
+  }
+
+  return prisma.subscription.create({
+    data: {
+      companyId,
+      plan: planKey,
+      status: SUBSCRIPTION_STATUS.INCOMPLETE,
+      billingStatus: BILLING_STATUS.INCOMPLETE,
+      cancelAtPeriodEnd: false,
     },
   });
 }
 
-async function upsertPaymentIntentPayment(paymentIntent, subscription) {
-  const paymentIntentId = safeString(paymentIntent.id);
-  const invoiceId = safeString(paymentIntent.invoice || null);
-  const paymentMethodId = safeString(paymentIntent.payment_method || null);
-  const amount = Number((paymentIntent.amount || 0) / 100);
-  const paidAt = paymentIntent.status === 'succeeded' ? new Date() : null;
-  const failureReason = paymentIntent.last_payment_error?.message || null;
+function buildStripeSubscriptionSnapshot({ stripeSubscription, fallbackPlanKey, stripeCustomerId, checkoutSessionId }) {
+  const status = mapStripeSubscriptionStatus(stripeSubscription.status);
+  const planKey = resolvePlanKey({
+    explicitPlan: stripeSubscription.metadata?.planKey,
+    stripeSubscription,
+    fallbackPlan: fallbackPlanKey,
+  });
 
-  return prisma.payment.upsert({
-    where: { stripePaymentIntentId: paymentIntentId },
-    create: {
-      subscriptionId: subscription.id,
-      companyId: subscription.companyId,
-      stripePaymentIntentId: paymentIntentId,
-      stripeInvoiceId: invoiceId,
-      stripePaymentMethodId: paymentMethodId,
-      mpPaymentId: paymentIntentId,
-      amount,
-      status: mapPaymentIntentStatus(paymentIntent.status),
-      paidAt,
-      failureReason,
+  return {
+    planKey,
+    companyData: {
+      plan: getPlanConfig(planKey).slug,
+      subscriptionStatus: status,
+      billingStatus: mapSubscriptionStatusToBillingStatus(status),
+      trialEndsAt: fromStripeTimestamp(stripeSubscription.trial_end),
+      currentPeriodEnd: fromStripeTimestamp(stripeSubscription.current_period_end),
+      cancelAtPeriodEnd: Boolean(stripeSubscription.cancel_at_period_end),
+      stripeCustomerId: asString(stripeCustomerId || stripeSubscription.customer),
+      stripeSubscriptionId: stripeSubscription.id,
+      stripePriceId: getStripePriceId(stripeSubscription),
+      lastInvoiceId: getStripeInvoiceId(stripeSubscription),
     },
-    update: {
-      stripeInvoiceId: invoiceId,
-      stripePaymentMethodId: paymentMethodId,
-      amount,
-      status: mapPaymentIntentStatus(paymentIntent.status),
-      paidAt,
-      failureReason,
+    subscriptionData: {
+      plan: planKey,
+      status,
+      billingStatus: mapSubscriptionStatusToBillingStatus(status),
+      trialStart: fromStripeTimestamp(stripeSubscription.trial_start),
+      trialEndsAt: fromStripeTimestamp(stripeSubscription.trial_end),
+      currentPeriodStart: fromStripeTimestamp(stripeSubscription.current_period_start),
+      currentPeriodEnd: fromStripeTimestamp(stripeSubscription.current_period_end),
+      cancelAtPeriodEnd: Boolean(stripeSubscription.cancel_at_period_end),
+      cancelledAt: fromStripeTimestamp(stripeSubscription.canceled_at),
+      stripeCustomerId: asString(stripeCustomerId || stripeSubscription.customer),
+      stripeSubscriptionId: stripeSubscription.id,
+      stripePriceId: getStripePriceId(stripeSubscription),
+      stripePaymentMethodId: getStripePaymentMethodId(stripeSubscription),
+      stripeCheckoutSessionId: checkoutSessionId || null,
+      lastInvoiceId: getStripeInvoiceId(stripeSubscription),
     },
+  };
+}
+
+async function persistStripeSubscriptionSnapshot({
+  companyId,
+  stripeSubscription,
+  localSubscriptionId = null,
+  checkoutSessionId = null,
+  fallbackPlanKey = null,
+  stripeCustomerId = null,
+}) {
+  const snapshot = buildStripeSubscriptionSnapshot({
+    stripeSubscription,
+    fallbackPlanKey,
+    stripeCustomerId,
+    checkoutSessionId,
+  });
+
+  return prisma.$transaction(async (tx) => {
+    let subscription = null;
+
+    if (localSubscriptionId) {
+      subscription = await tx.subscription.findUnique({ where: { id: localSubscriptionId } });
+    }
+
+    if (!subscription && stripeSubscription.id) {
+      subscription = await tx.subscription.findUnique({
+        where: { stripeSubscriptionId: stripeSubscription.id },
+      });
+    }
+
+    if (!subscription && checkoutSessionId) {
+      subscription = await tx.subscription.findFirst({
+        where: { stripeCheckoutSessionId: checkoutSessionId },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
+    if (!subscription) {
+      subscription = await tx.subscription.create({
+        data: {
+          companyId,
+          ...snapshot.subscriptionData,
+        },
+      });
+    } else {
+      subscription = await tx.subscription.update({
+        where: { id: subscription.id },
+        data: snapshot.subscriptionData,
+      });
+    }
+
+    await tx.company.update({
+      where: { id: companyId },
+      data: snapshot.companyData,
+    });
+
+    return subscription;
   });
 }
 
-async function handleStripeInvoiceEvent(invoice) {
-  const subscription = await findSubscriptionByStripeReferences({
-    stripeSubscriptionId: invoice.subscription,
-    localSubscriptionId: invoice.metadata?.localSubscriptionId,
-    companyId: invoice.metadata?.companyId,
-    stripeCustomerId: invoice.customer,
+async function createCheckoutSession({ companyId, userId, plan }) {
+  const planKey = normalizePlanKey(plan);
+  const [company, billingUser, latestSubscription] = await Promise.all([
+    getCompany(companyId),
+    getBillingUser({ companyId, userId }),
+    getLatestSubscription(companyId),
+  ]);
+
+  if (
+    latestSubscription?.stripeSubscriptionId
+    && ![SUBSCRIPTION_STATUS.CANCELED, SUBSCRIPTION_STATUS.INCOMPLETE_EXPIRED].includes(latestSubscription.status)
+  ) {
+    throw new BillingError('A empresa ja possui uma assinatura gerenciada pela Stripe. Use o portal para alterar a cobranca.', 409);
+  }
+
+  const stripeCustomerId = await ensureStripeCustomer({ company, billingUser });
+  const placeholderSubscription = await ensureCheckoutPlaceholderSubscription({
+    companyId,
+    planKey,
+    latestSubscription,
   });
+
+  const checkoutSession = await stripeService.createCheckoutSession({
+    customerId: stripeCustomerId,
+    customerEmail: billingUser.email,
+    companyId,
+    userId,
+    localSubscriptionId: placeholderSubscription.id,
+    planKey,
+  });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.subscription.update({
+      where: { id: placeholderSubscription.id },
+      data: {
+        stripeCustomerId,
+        stripeCheckoutSessionId: checkoutSession.id,
+      },
+    });
+
+    await tx.company.update({
+      where: { id: companyId },
+      data: {
+        plan: getPlanConfig(planKey).slug,
+        stripeCustomerId,
+        subscriptionStatus: SUBSCRIPTION_STATUS.INCOMPLETE,
+        billingStatus: BILLING_STATUS.INCOMPLETE,
+        stripeSubscriptionId: null,
+        stripePriceId: null,
+        trialEndsAt: null,
+        currentPeriodEnd: null,
+        cancelAtPeriodEnd: false,
+        lastInvoiceId: null,
+      },
+    });
+  });
+
+  return {
+    checkoutSessionId: checkoutSession.id,
+    checkoutUrl: checkoutSession.url,
+  };
+}
+
+async function syncCheckoutSession({ companyId, sessionId }) {
+  const checkoutSession = await stripeService.retrieveCheckoutSession(sessionId);
+  const sessionCompanyId = checkoutSession.metadata?.companyId || checkoutSession.client_reference_id;
+
+  if (String(sessionCompanyId || '') !== String(companyId)) {
+    throw new BillingError('Sessao de checkout invalida para esta empresa.', 403);
+  }
+
+  if (!checkoutSession.subscription) {
+    const subscription = await getLatestSubscription(companyId);
+    return formatSubscriptionResponse(subscription, (await getCompany(companyId)).plan);
+  }
+
+  const stripeSubscription = checkoutSession.subscription.id
+    ? checkoutSession.subscription
+    : await stripeService.retrieveSubscription(checkoutSession.subscription);
+
+  const savedSubscription = await persistStripeSubscriptionSnapshot({
+    companyId,
+    stripeSubscription,
+    localSubscriptionId: checkoutSession.metadata?.localSubscriptionId || null,
+    checkoutSessionId: checkoutSession.id,
+    fallbackPlanKey: checkoutSession.metadata?.planKey || null,
+    stripeCustomerId: asString(checkoutSession.customer),
+  });
+
+  return formatSubscriptionResponse(savedSubscription, getPlanConfig(savedSubscription.plan).slug);
+}
+
+async function createPortalSession({ companyId }) {
+  const company = await getCompany(companyId);
+  const stripeCustomerId = company.stripeCustomerId;
+
+  if (!stripeCustomerId) {
+    throw new BillingError('Nenhum cliente Stripe foi encontrado para esta empresa.', 409);
+  }
+
+  const session = await stripeService.createPortalSession({
+    customerId: stripeCustomerId,
+  });
+
+  return { portalUrl: session.url };
+}
+
+async function getSubscriptionStatus(companyId) {
+  await reconcileCompanyBillingState(companyId);
+
+  const [company, subscription] = await Promise.all([
+    prisma.company.findUnique({ where: { id: companyId } }),
+    getLatestSubscription(companyId),
+  ]);
+
+  if (!company) {
+    return null;
+  }
 
   if (!subscription) {
-    console.warn('[Billing] Subscription nao encontrada para invoice webhook:', invoice.id);
+    return {
+      id: null,
+      plan: normalizePlanKey(company.plan),
+      planSlug: company.plan,
+      planName: PLAN_NAMES[normalizePlanKey(company.plan)],
+      planPrice: PLAN_PRICES[normalizePlanKey(company.plan)],
+      status: company.subscriptionStatus,
+      billingStatus: company.billingStatus,
+      trialStart: null,
+      trialEndsAt: company.trialEndsAt,
+      trialDaysLeft: computeTrialDaysLeft(company.trialEndsAt),
+      currentPeriodStart: null,
+      currentPeriodEnd: company.currentPeriodEnd,
+      cancelAtPeriodEnd: Boolean(company.cancelAtPeriodEnd),
+      cancelledAt: null,
+      stripeCustomerId: company.stripeCustomerId,
+      stripeSubscriptionId: company.stripeSubscriptionId,
+      stripePriceId: company.stripePriceId,
+      stripePaymentMethodId: null,
+      stripeCheckoutSessionId: null,
+      lastInvoiceId: company.lastInvoiceId,
+      portalEligible: Boolean(company.stripeCustomerId),
+    };
+  }
+
+  return formatSubscriptionResponse(subscription, company.plan);
+}
+
+async function listPayments(companyId, limit = 50) {
+  return prisma.payment.findMany({
+    where: { companyId },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  });
+}
+
+async function upsertInvoicePayment(invoice, subscription) {
+  const invoiceId = asString(invoice.id);
+  const paymentIntentId = asString(invoice.payment_intent?.id || invoice.payment_intent || null);
+  const paymentMethodId = asString(
+    invoice.payment_settings?.default_payment_method
+      || invoice.default_payment_method
+      || invoice.charge?.payment_method
+      || null
+  );
+
+  return prisma.payment.upsert({
+    where: { stripeInvoiceId: invoiceId },
+    create: {
+      companyId: subscription.companyId,
+      subscriptionId: subscription.id,
+      stripeInvoiceId: invoiceId,
+      stripePaymentIntentId: paymentIntentId,
+      stripePaymentMethodId: paymentMethodId,
+      amount: Number((invoice.amount_paid ?? invoice.amount_due ?? 0) / 100),
+      status: mapInvoicePaymentStatus(invoice),
+      paidAt: invoice.paid ? new Date() : null,
+      failureReason: invoice.last_finalization_error?.message || invoice.last_payment_error?.message || null,
+    },
+    update: {
+      stripePaymentIntentId: paymentIntentId,
+      stripePaymentMethodId: paymentMethodId,
+      amount: Number((invoice.amount_paid ?? invoice.amount_due ?? 0) / 100),
+      status: mapInvoicePaymentStatus(invoice),
+      paidAt: invoice.paid ? new Date() : null,
+      failureReason: invoice.last_finalization_error?.message || invoice.last_payment_error?.message || null,
+    },
+  });
+}
+
+async function handleCheckoutSessionCompleted(session) {
+  const companyId = session.metadata?.companyId || session.client_reference_id;
+  if (!companyId || !session.subscription) {
     return;
   }
 
-  await upsertInvoicePayment(invoice, subscription);
+  const stripeSubscription = session.subscription.id
+    ? session.subscription
+    : await stripeService.retrieveSubscription(session.subscription);
 
-  const updateData = {
-    stripeLatestInvoiceId: safeString(invoice.id),
-    stripePaymentMethodId: safeString(invoice.default_payment_method || subscription.stripePaymentMethodId || null),
-  };
-
-  if (invoice.status === 'paid') {
-    const periodLine = invoice.lines?.data?.find((line) => line.type === 'subscription') || invoice.lines?.data?.[0];
-    updateData.status = BILLING_STATUS.ACTIVE;
-    updateData.currentPeriodStart = periodLine?.period?.start ? new Date(periodLine.period.start * 1000) : new Date();
-    updateData.currentPeriodEnd = periodLine?.period?.end ? new Date(periodLine.period.end * 1000) : addMonths(new Date(), 1);
-    updateData.gracePeriodEnd = null;
-    updateData.trialEndsAt = null;
-  } else if (invoice.status === 'open') {
-    updateData.status = BILLING_STATUS.PAST_DUE;
-    updateData.gracePeriodEnd = addDays(new Date(), GRACE_PERIOD_DAYS);
-  }
-
-  await syncSubscriptionAndCompany(subscription.id, subscription.companyId, updateData);
+  await persistStripeSubscriptionSnapshot({
+    companyId,
+    stripeSubscription,
+    localSubscriptionId: session.metadata?.localSubscriptionId || null,
+    checkoutSessionId: session.id,
+    fallbackPlanKey: session.metadata?.planKey || null,
+    stripeCustomerId: asString(session.customer),
+  });
 }
 
 async function handleStripeSubscriptionEvent(stripeSubscription) {
-  const subscription = await findSubscriptionByStripeReferences({
+  const existingSubscription = await findSubscriptionByStripeReferences({
     stripeSubscriptionId: stripeSubscription.id,
     localSubscriptionId: stripeSubscription.metadata?.localSubscriptionId,
     companyId: stripeSubscription.metadata?.companyId,
     stripeCustomerId: stripeSubscription.customer,
   });
 
-  if (!subscription) {
-    console.warn('[Billing] Subscription local nao encontrada para evento da Stripe:', stripeSubscription.id);
+  const companyId = stripeSubscription.metadata?.companyId || existingSubscription?.companyId;
+  if (!companyId) {
+    console.warn('[Billing] Evento de subscription sem companyId local:', stripeSubscription.id);
     return;
   }
 
-  const trialEndsAt = stripeSubscription.trial_end ? new Date(stripeSubscription.trial_end * 1000) : null;
-  await syncSubscriptionAndCompany(subscription.id, subscription.companyId, {
-    ...buildSubscriptionWriteModel({
-      plan: normalizePlanKey(stripeSubscription.metadata?.plan || subscription.plan),
-      stripeCustomerId: safeString(stripeSubscription.customer || subscription.stripeCustomerId || subscription.mpCustomerId),
-      stripeSubscription,
-      trialEndsAtOverride: trialEndsAt,
-    }),
+  await persistStripeSubscriptionSnapshot({
+    companyId,
+    stripeSubscription,
+    localSubscriptionId: existingSubscription?.id || stripeSubscription.metadata?.localSubscriptionId || null,
+    fallbackPlanKey: existingSubscription?.plan || stripeSubscription.metadata?.planKey || null,
+    stripeCustomerId: asString(stripeSubscription.customer),
   });
 }
 
-async function handleStripePaymentIntentEvent(paymentIntent) {
+async function handleStripeInvoiceEvent(invoice, eventType = null) {
   const subscription = await findSubscriptionByStripeReferences({
-    stripeSubscriptionId: paymentIntent.metadata?.stripeSubscriptionId,
-    localSubscriptionId: paymentIntent.metadata?.localSubscriptionId,
-    companyId: paymentIntent.metadata?.companyId,
-    stripeCustomerId: paymentIntent.customer,
+    stripeSubscriptionId: invoice.subscription,
+    companyId: invoice.metadata?.companyId,
+    stripeCustomerId: invoice.customer,
   });
 
   if (!subscription) {
+    console.warn('[Billing] Invoice recebida sem assinatura local correspondente:', invoice.id);
     return;
   }
 
-  await upsertPaymentIntentPayment(paymentIntent, subscription);
+  await upsertInvoicePayment(invoice, subscription);
 
-  if (paymentIntent.status === 'succeeded') {
-    await syncSubscriptionAndCompany(subscription.id, subscription.companyId, {
-      status: BILLING_STATUS.ACTIVE,
-      gracePeriodEnd: null,
-      stripePaymentMethodId: safeString(paymentIntent.payment_method || subscription.stripePaymentMethodId || null),
-    });
-    return;
+  if (invoice.subscription) {
+    try {
+      const stripeSubscription = await stripeService.retrieveSubscription(invoice.subscription);
+      await persistStripeSubscriptionSnapshot({
+        companyId: subscription.companyId,
+        stripeSubscription,
+        localSubscriptionId: subscription.id,
+        fallbackPlanKey: subscription.plan,
+        stripeCustomerId: asString(invoice.customer),
+      });
+      return;
+    } catch (error) {
+      console.warn('[Billing] Falha ao buscar subscription apos invoice webhook:', {
+        invoiceId: invoice.id,
+        stripeSubscriptionId: invoice.subscription,
+        message: error.message,
+      });
+    }
   }
 
-  if (['requires_payment_method', 'canceled'].includes(String(paymentIntent.status || '').toLowerCase())) {
-    await syncSubscriptionAndCompany(subscription.id, subscription.companyId, {
-      status: BILLING_STATUS.PAST_DUE,
-      gracePeriodEnd: addDays(new Date(), GRACE_PERIOD_DAYS),
-      stripePaymentMethodId: safeString(paymentIntent.payment_method || subscription.stripePaymentMethodId || null),
+  await prisma.$transaction(async (tx) => {
+    await tx.subscription.update({
+      where: { id: subscription.id },
+      data: {
+        billingStatus: mapInvoiceBillingStatus(invoice),
+        lastInvoiceId: asString(invoice.id),
+        stripePaymentMethodId: asString(invoice.default_payment_method || subscription.stripePaymentMethodId),
+      },
     });
-  }
-}
 
-async function handleStripeSetupIntentEvent(setupIntent) {
-  const subscription = await findSubscriptionByStripeReferences({
-    localSubscriptionId: setupIntent.metadata?.localSubscriptionId,
-    companyId: setupIntent.metadata?.companyId,
-    stripeCustomerId: setupIntent.customer,
+    await tx.company.update({
+      where: { id: subscription.companyId },
+      data: {
+        billingStatus: mapInvoiceBillingStatus(invoice),
+        lastInvoiceId: asString(invoice.id),
+      },
+    });
   });
-
-  if (!subscription) {
-    return;
-  }
-
-  const updateData = {
-    stripeSetupIntentId: setupIntent.id,
-    stripePaymentMethodId: safeString(setupIntent.payment_method || null),
-  };
-
-  if (setupIntent.status === 'requires_action') {
-    updateData.status = BILLING_STATUS.PAST_DUE;
-    updateData.gracePeriodEnd = addDays(new Date(), GRACE_PERIOD_DAYS);
-  }
-
-  await syncSubscriptionAndCompany(subscription.id, subscription.companyId, updateData);
 }
 
 async function handleStripeCustomerEvent(customer) {
@@ -768,18 +652,22 @@ async function handleStripeCustomerEvent(customer) {
     return;
   }
 
-  const subscription = await getLatestSubscription(companyId);
-  if (!subscription) {
-    return;
-  }
-
-  await syncSubscriptionAndCompany(subscription.id, companyId, {
-    stripeCustomerId: customer.id,
+  await prisma.company.update({
+    where: { id: companyId },
+    data: { stripeCustomerId: customer.id },
   });
+
+  const subscription = await getLatestSubscription(companyId);
+  if (subscription) {
+    await prisma.subscription.update({
+      where: { id: subscription.id },
+      data: { stripeCustomerId: customer.id },
+    });
+  }
 }
 
 async function handleStripePaymentMethodAttached(paymentMethod) {
-  const customerId = safeString(paymentMethod.customer || null);
+  const customerId = asString(paymentMethod.customer);
   if (!customerId) {
     return;
   }
@@ -789,69 +677,43 @@ async function handleStripePaymentMethodAttached(paymentMethod) {
     return;
   }
 
-  await syncSubscriptionAndCompany(subscription.id, subscription.companyId, {
-    stripePaymentMethodId: paymentMethod.id,
+  await prisma.$transaction(async (tx) => {
+    await tx.subscription.update({
+      where: { id: subscription.id },
+      data: { stripePaymentMethodId: paymentMethod.id },
+    });
+
+    await tx.company.update({
+      where: { id: subscription.companyId },
+      data: { stripeCustomerId: customerId },
+    });
   });
 }
 
 async function reconcileCompanyBillingState(companyId) {
   const subscription = await getLatestSubscription(companyId);
-  if (!subscription) return null;
-
-  const stripeSubscriptionId = subscription.stripeSubscriptionId || subscription.mpPreapprovalId || null;
-  if (stripeSubscriptionId) {
-    try {
-      const remoteSubscription = await stripeService.retrieveSubscription(stripeSubscriptionId);
-      await handleStripeSubscriptionEvent(remoteSubscription);
-      return getLatestSubscription(companyId);
-    } catch (error) {
-      console.warn('[Billing] Falha ao reconciliar assinatura com Stripe:', {
-        companyId,
-        stripeSubscriptionId,
-        message: error.message,
-      });
-    }
+  if (!subscription?.stripeSubscriptionId) {
+    return subscription;
   }
 
-  const now = new Date();
-
-  if (subscription.status === BILLING_STATUS.TRIAL && subscription.trialEndsAt && new Date(subscription.trialEndsAt) <= now) {
-    await syncSubscriptionAndCompany(subscription.id, subscription.companyId, {
-      status: subscription.stripeSubscriptionId ? BILLING_STATUS.PAST_DUE : BILLING_STATUS.EXPIRED,
-      gracePeriodEnd: subscription.stripeSubscriptionId ? addDays(now, GRACE_PERIOD_DAYS) : null,
+  try {
+    const stripeSubscription = await stripeService.retrieveSubscription(subscription.stripeSubscriptionId);
+    await persistStripeSubscriptionSnapshot({
+      companyId,
+      stripeSubscription,
+      localSubscriptionId: subscription.id,
+      fallbackPlanKey: subscription.plan,
+      stripeCustomerId: subscription.stripeCustomerId,
     });
-    return getLatestSubscription(companyId);
-  }
-
-  if (subscription.status === BILLING_STATUS.PAST_DUE && subscription.gracePeriodEnd && new Date(subscription.gracePeriodEnd) <= now) {
-    await syncSubscriptionAndCompany(subscription.id, subscription.companyId, {
-      status: BILLING_STATUS.EXPIRED,
-      gracePeriodEnd: null,
+  } catch (error) {
+    console.warn('[Billing] Falha ao reconciliar assinatura com Stripe:', {
+      companyId,
+      stripeSubscriptionId: subscription.stripeSubscriptionId,
+      message: error.message,
     });
-    return getLatestSubscription(companyId);
   }
 
-  return subscription;
-}
-
-async function reconcileAllSubscriptions() {
-  const activeSubscriptions = await prisma.subscription.findMany({
-    where: {
-      status: { in: MANAGED_STATUSES },
-    },
-    select: { companyId: true },
-  });
-
-  for (const subscription of activeSubscriptions) {
-    try {
-      await reconcileCompanyBillingState(subscription.companyId);
-    } catch (error) {
-      console.error('[Billing] Falha ao reconciliar assinatura:', {
-        companyId: subscription.companyId,
-        message: error.message,
-      });
-    }
-  }
+  return getLatestSubscription(companyId);
 }
 
 class BillingError extends Error {
@@ -864,26 +726,23 @@ class BillingError extends Error {
 }
 
 module.exports = {
-  addDays,
-  addMonths,
-  createSubscription,
-  cancelSubscription,
+  createCheckoutSession,
+  syncCheckoutSession,
+  createPortalSession,
   getSubscriptionStatus,
   listPayments,
-  handleStripeInvoiceEvent,
+  handleCheckoutSessionCompleted,
   handleStripeSubscriptionEvent,
-  handleStripePaymentIntentEvent,
-  handleStripeSetupIntentEvent,
+  handleStripeInvoiceEvent,
   handleStripeCustomerEvent,
   handleStripePaymentMethodAttached,
-  changePlan,
-  reactivateSubscription,
   reconcileCompanyBillingState,
-  reconcileAllSubscriptions,
   BillingError,
   PLAN_PRICES,
   PLAN_NAMES,
-  STATUS: BILLING_STATUS,
+  STATUS: SUBSCRIPTION_STATUS,
+  BILLING_STATUS,
   TRIAL_DAYS,
-  GRACE_PERIOD_DAYS,
+  isSubscriptionActive,
+  isSubscriptionRecoverable,
 };

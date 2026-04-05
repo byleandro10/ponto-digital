@@ -18,14 +18,11 @@ jest.mock('../src/controllers/timeEntryController', () => ({
 }));
 
 jest.mock('../src/controllers/subscriptionController', () => ({
-  getPublicBillingConfig: (req, res) => res.status(200).json({ ok: true }),
-  createSetupIntent: (req, res) => res.status(201).json({ ok: true }),
-  createPreapproval: (req, res) => res.status(200).json({ ok: true }),
+  createCheckoutSession: (req, res) => res.status(201).json({ ok: true }),
+  syncCheckoutSession: (req, res) => res.status(200).json({ ok: true }),
+  createPortalSession: (req, res) => res.status(201).json({ ok: true }),
   getStatus: (req, res) => res.status(200).json({ ok: true }),
-  changePlan: (req, res) => res.status(200).json({ ok: true }),
-  cancelSubscription: (req, res) => res.status(200).json({ ok: true }),
   getPayments: (req, res) => res.status(200).json({ ok: true }),
-  reactivateSubscription: (req, res) => res.status(200).json({ ok: true }),
 }));
 
 jest.mock('../src/controllers/authController', () => ({
@@ -38,7 +35,7 @@ jest.mock('../src/controllers/authController', () => ({
 
 const reportRoutes = require('../src/routes/reportRoutes');
 const timeEntryRoutes = require('../src/routes/timeEntryRoutes');
-const subscriptionRoutes = require('../src/routes/subscriptionRoutes');
+const billingRoutes = require('../src/routes/billingRoutes');
 const authRoutes = require('../src/routes/authRoutes');
 
 function makeToken(payload) {
@@ -88,24 +85,24 @@ describe('Security route protections', () => {
     expect(response.body.error).toMatch(/permissao/i);
   });
 
-  test('blocks subscription management without login', async () => {
-    const app = buildApp('/api/subscriptions', subscriptionRoutes);
+  test('blocks hosted billing checkout without login', async () => {
+    const app = buildApp('/api/billing', billingRoutes);
 
     const response = await request(app)
-      .post('/api/subscriptions/reactivate')
-      .send({ plan: 'professional', paymentMethodId: 'pm_123', setupIntentId: 'seti_123' });
+      .post('/api/billing/checkout-session')
+      .send({ plan: 'professional' });
 
     expect(response.status).toBe(401);
     expect(response.body.error).toMatch(/token/i);
   });
 
-  test('blocks subscription management for employee tokens', async () => {
-    const app = buildApp('/api/subscriptions', subscriptionRoutes);
+  test('blocks hosted billing checkout for employee tokens', async () => {
+    const app = buildApp('/api/billing', billingRoutes);
 
     const response = await request(app)
-      .post('/api/subscriptions/reactivate')
+      .post('/api/billing/checkout-session')
       .set('Authorization', `Bearer ${employeeToken}`)
-      .send({ plan: 'professional', paymentMethodId: 'pm_123', setupIntentId: 'seti_123' });
+      .send({ plan: 'professional' });
 
     expect(response.status).toBe(403);
     expect(response.body.error).toMatch(/permissao/i);
@@ -122,13 +119,13 @@ describe('Security route protections', () => {
     expect(response.body.error).toMatch(/campos nao permitidos/i);
   });
 
-  test('rejects unexpected billing fields on reactivate endpoint', async () => {
-    const app = buildApp('/api/subscriptions', subscriptionRoutes);
+  test('rejects unexpected billing fields on checkout endpoint', async () => {
+    const app = buildApp('/api/billing', billingRoutes);
 
     const response = await request(app)
-      .post('/api/subscriptions/reactivate')
+      .post('/api/billing/checkout-session')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ plan: 'professional', paymentMethodId: 'pm_123', setupIntentId: 'seti_123', customerId: 'cus_forjado' });
+      .send({ plan: 'professional', customerId: 'cus_forged' });
 
     expect(response.status).toBe(400);
     expect(response.body.error).toMatch(/campos nao permitidos/i);

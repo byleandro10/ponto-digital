@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import {
   FiArrowLeft,
   FiArrowRight,
@@ -7,72 +7,50 @@ import {
   FiClock,
   FiCreditCard,
   FiLock,
-  FiRefreshCw,
-  FiShield,
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
-import { useStripeCardSetup } from '../hooks/useStripeCardSetup';
+import api from '../services/api';
+import { PLANS, getPlan, planKeyFromSlug } from '../utils/billing';
 
-const PLANS = {
-  basic: {
-    key: 'BASIC',
-    name: 'Básico',
-    price: 49,
-    employees: 'Até 15 funcionários',
-    features: ['Ponto digital com GPS', 'Dashboard em tempo real', 'Relatório mensal', 'Suporte por e-mail', 'PWA offline'],
-  },
-  professional: {
-    key: 'PROFESSIONAL',
-    name: 'Profissional',
-    price: 99,
-    employees: 'Até 50 funcionários',
-    features: ['Tudo do Básico', 'Selfie antifraude', 'Cerca virtual', 'Exportação PDF, Excel e CSV', 'Banco de horas', 'Suporte prioritário'],
-    popular: true,
-  },
-  enterprise: {
-    key: 'ENTERPRISE',
-    name: 'Empresarial',
-    price: 199,
-    employees: 'Funcionários ilimitados',
-    features: ['Tudo do Profissional', 'API de integração', 'Multiunidades', 'Relatórios avançados', 'Gerente de conta dedicado', 'SLA de 99,9%'],
-  },
-};
-
-function PlanCard({ plan, selected, onSelect }) {
-  const isSelected = selected === plan.key;
+function PlanCard({ plan, selectedPlan, onSelect }) {
+  const selected = selectedPlan === plan.key;
 
   return (
     <button
       type="button"
       onClick={() => onSelect(plan.key)}
-      className={`relative rounded-2xl border-2 p-6 text-left transition-all ${
-        isSelected ? 'border-blue-600 bg-blue-50 shadow-lg' : 'border-gray-200 bg-white hover:border-blue-300'
+      className={`relative rounded-3xl border p-6 text-left transition ${
+        selected
+          ? 'border-blue-600 bg-blue-50 shadow-lg shadow-blue-100'
+          : 'border-gray-200 bg-white hover:border-blue-200 hover:shadow-sm'
       }`}
     >
       {plan.popular && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-3 py-1 text-xs font-bold text-slate-900">
-          MAIS ESCOLHIDO
-        </div>
+        <span className="absolute right-5 top-5 rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white">
+          Mais escolhido
+        </span>
       )}
 
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-lg font-bold text-gray-800">{plan.name}</h3>
-        <div className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${isSelected ? 'border-blue-600 bg-blue-600' : 'border-gray-300'}`}>
-          {isSelected && <FiCheck className="h-3 w-3 text-white" />}
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-xl font-bold text-slate-900">{plan.name}</h3>
+          <p className="mt-1 text-sm text-slate-500">{plan.employees}</p>
+        </div>
+        <div className={`flex h-6 w-6 items-center justify-center rounded-full border-2 ${selected ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 text-transparent'}`}>
+          <FiCheck className="h-3.5 w-3.5" />
         </div>
       </div>
 
-      <p className="mb-3 text-sm text-gray-500">{plan.employees}</p>
-      <div className="mb-4">
-        <span className="text-3xl font-extrabold text-gray-900">R${plan.price}</span>
-        <span className="text-sm text-gray-500">/mês</span>
+      <div className="mb-5">
+        <span className="text-4xl font-extrabold tracking-tight text-slate-900">R${plan.price}</span>
+        <span className="ml-1 text-sm text-slate-500">/mês</span>
       </div>
 
-      <ul className="space-y-2">
+      <ul className="space-y-2 text-sm text-slate-600">
         {plan.features.map((feature) => (
-          <li key={feature} className="flex items-start gap-2 text-sm text-gray-600">
-            <FiCheck className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
+          <li key={feature} className="flex items-start gap-2">
+            <FiCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
             <span>{feature}</span>
           </li>
         ))}
@@ -81,350 +59,340 @@ function PlanCard({ plan, selected, onSelect }) {
   );
 }
 
-function StripeField({ label, helper, error, containerRef }) {
-  return (
-    <div>
-      <label className="mb-1 block text-sm font-medium text-gray-700">{label}</label>
-      <div className={`min-h-[56px] w-full rounded-xl border bg-white px-4 py-4 transition ${
-        error ? 'border-red-300 ring-2 ring-red-100' : 'border-gray-300 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500'
-      }`}>
-        <div ref={containerRef} className="min-h-[24px]" />
-      </div>
-      <p className={`mt-2 text-xs ${error ? 'text-red-600' : 'text-gray-500'}`}>{error || helper}</p>
-    </div>
-  );
-}
-
 export default function Checkout() {
+  const { plan: planSlug } = useParams();
   const { register } = useAuth();
-  const { plan: urlPlan } = useParams();
 
   const [step, setStep] = useState(1);
-  const [selectedPlan, setSelectedPlan] = useState(urlPlan && PLANS[urlPlan] ? PLANS[urlPlan].key : 'PROFESSIONAL');
+  const [selectedPlan, setSelectedPlan] = useState(planKeyFromSlug(planSlug, 'PROFESSIONAL'));
   const [companyName, setCompanyName] = useState('');
   const [cnpj, setCnpj] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [cardHolder, setCardHolder] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const selectedPlanData = useMemo(
-    () => Object.values(PLANS).find((item) => item.key === selectedPlan),
-    [selectedPlan]
-  );
+  const plan = useMemo(() => getPlan(selectedPlan), [selectedPlan]);
 
-  const {
-    cardElementRef,
-    stripeReady,
-    stripeLoading,
-    stripeLoadError,
-    cardError,
-    cardComplete,
-    mount,
-    confirmCardSetup,
-  } = useStripeCardSetup({
-    enabled: step >= 3,
-    email,
-  });
-
-  const validateAccountStep = () => {
-    if (!companyName || companyName.length < 3) {
+  function validateAccountStep() {
+    if (!companyName || companyName.trim().length < 3) {
       toast.error('Informe o nome da empresa com pelo menos 3 caracteres.');
       return false;
     }
+
     if (!cnpj || cnpj.replace(/\D/g, '').length !== 14) {
       toast.error('Informe um CNPJ válido com 14 dígitos.');
       return false;
     }
-    if (!name || name.length < 3) {
+
+    if (!name || name.trim().length < 3) {
       toast.error('Informe seu nome completo.');
       return false;
     }
+
     if (!email || !email.includes('@')) {
       toast.error('Informe um e-mail válido.');
       return false;
     }
+
     if (!password || password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
-      toast.error('A senha deve ter pelo menos 8 caracteres, com letra maiúscula, letra minúscula e número.');
+      toast.error('A senha precisa ter pelo menos 8 caracteres, com letra maiúscula, minúscula e número.');
       return false;
     }
 
     return true;
-  };
+  }
 
-  const validateCardStep = () => {
-    if (!cardHolder || cardHolder.length < 3) {
-      toast.error('Informe o nome do titular do cartão.');
-      return false;
-    }
-    if (stripeLoadError) {
-      toast.error(stripeLoadError);
-      return false;
-    }
-    if (cardError) {
-      toast.error(cardError);
-      return false;
-    }
-    if (!cardComplete || !stripeReady) {
-      toast.error('Preencha os dados do cartão no campo seguro da Stripe para continuar.');
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleSubmit = useCallback(async () => {
-    if (!validateCardStep()) {
+  async function handleSubmit() {
+    if (!validateAccountStep()) {
+      setStep(2);
       return;
     }
 
     setLoading(true);
 
     try {
-      const { paymentMethodId, setupIntentId } = await confirmCardSetup({ cardHolder });
-
       await register({
         companyName,
         cnpj,
         name,
         email,
         password,
-        plan: selectedPlan.toLowerCase(),
-        paymentMethodId,
-        setupIntentId,
+        plan: plan.slug,
       });
 
-      toast.success('Conta criada com sucesso e cartão validado com segurança.');
-      window.location.href = '/admin/dashboard';
+      const { data } = await api.post('/billing/checkout-session', { plan: selectedPlan });
+
+      if (!data.checkoutUrl) {
+        throw new Error('O checkout da Stripe não retornou uma URL válida.');
+      }
+
+      window.location.href = data.checkoutUrl;
     } catch (error) {
-      toast.error(error.response?.data?.error || error.message || 'Não foi possível concluir seu cadastro.');
+      const apiError = error.response?.data?.error;
+
+      if (apiError) {
+        toast.error(apiError);
+      } else {
+        toast.error('Não foi possível iniciar o pagamento agora. Você poderá tentar novamente na tela de assinatura.');
+      }
+
+      if (localStorage.getItem('token')) {
+        window.location.href = '/admin/subscription';
+      }
     } finally {
       setLoading(false);
     }
-  }, [cardHolder, cnpj, companyName, confirmCardSetup, email, name, password, register, selectedPlan]);
-
-  const firstChargeDate = new Date();
-  firstChargeDate.setDate(firstChargeDate.getDate() + 30);
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
-      <header className="border-b border-gray-100 bg-white/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.14),_transparent_35%),linear-gradient(180deg,#f8fbff_0%,#ffffff_55%,#f8fafc_100%)]">
+      <header className="border-b border-slate-100 bg-white/90 backdrop-blur">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <Link to="/" className="flex items-center gap-2 text-xl font-bold text-blue-600">
             <FiClock className="h-7 w-7" />
             PontoDigital
           </Link>
-          <Link to="/" className="flex items-center gap-1 text-sm text-gray-500 hover:text-blue-600">
+
+          <Link to="/" className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-blue-600">
             <FiArrowLeft className="h-4 w-4" />
             Voltar
           </Link>
         </div>
       </header>
 
-      <div className="mx-auto max-w-4xl px-6 py-10">
+      <div className="mx-auto max-w-5xl px-6 py-10">
         <div className="mb-10 flex items-center justify-center gap-2">
-          {[1, 2, 3, 4].map((item) => (
+          {[1, 2, 3].map((item) => (
             <div key={item} className="flex items-center gap-2">
-              <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold ${step >= item ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500'}`}>
+              <div className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold ${step >= item ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500'}`}>
                 {step > item ? <FiCheck className="h-4 w-4" /> : item}
               </div>
-              {item < 4 && <div className={`h-0.5 w-12 ${step > item ? 'bg-blue-600' : 'bg-gray-200'}`} />}
+              {item < 3 && <div className={`h-0.5 w-14 ${step > item ? 'bg-blue-600' : 'bg-slate-200'}`} />}
             </div>
           ))}
         </div>
 
         {step === 1 && (
-          <div>
-            <h2 className="mb-2 text-center text-2xl font-bold text-gray-900">Escolha seu plano</h2>
-            <p className="mb-8 text-center text-gray-500">30 dias grátis em todos os planos.</p>
+          <section>
+            <div className="mx-auto max-w-2xl text-center">
+              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-blue-600">Assinatura SaaS</p>
+              <h1 className="mt-3 text-4xl font-extrabold tracking-tight text-slate-900">
+                Escolha o plano ideal para sua empresa
+              </h1>
+              <p className="mt-4 text-lg text-slate-600">
+                Você começa com 30 dias grátis e conclui o pagamento em um checkout seguro da Stripe.
+              </p>
+            </div>
 
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-              {Object.values(PLANS).map((plan) => (
-                <PlanCard key={plan.key} plan={plan} selected={selectedPlan} onSelect={setSelectedPlan} />
+            <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
+              {Object.values(PLANS).map((entry) => (
+                <PlanCard key={entry.key} plan={entry} selectedPlan={selectedPlan} onSelect={setSelectedPlan} />
               ))}
             </div>
 
-            <div className="mt-8 flex justify-center">
-              <button onClick={() => setStep(2)} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-8 py-3 font-semibold text-white transition hover:bg-blue-700">
+            <div className="mt-10 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-8 py-3 font-semibold text-white transition hover:bg-blue-700"
+              >
                 Continuar
                 <FiArrowRight />
               </button>
             </div>
-          </div>
+          </section>
         )}
 
         {step === 2 && (
-          <div className="mx-auto max-w-lg">
-            <h2 className="mb-2 text-center text-2xl font-bold text-gray-900">Dados da empresa</h2>
-            <p className="mb-8 text-center text-gray-500">Esses dados criam sua conta administrativa.</p>
+          <section className="mx-auto max-w-2xl rounded-[28px] border border-slate-200 bg-white p-8 shadow-sm">
+            <div className="text-center">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-600">Dados da conta</p>
+              <h2 className="mt-3 text-3xl font-bold text-slate-900">Crie seu acesso administrativo</h2>
+              <p className="mt-3 text-slate-600">
+                Depois do cadastro, você será redirecionado para concluir a assinatura na Stripe.
+              </p>
+            </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Nome da empresa</label>
-                <input value={companyName} onChange={(event) => setCompanyName(event.target.value)} placeholder="Empresa Exemplo Ltda" className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500" />
+            <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Nome da empresa</label>
+                <input
+                  value={companyName}
+                  onChange={(event) => setCompanyName(event.target.value)}
+                  placeholder="Empresa Exemplo Ltda"
+                  className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
               </div>
+
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">CNPJ</label>
-                <input value={cnpj} onChange={(event) => setCnpj(event.target.value)} placeholder="00.000.000/0000-00" maxLength={18} className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500" />
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">CNPJ</label>
+                <input
+                  value={cnpj}
+                  onChange={(event) => setCnpj(event.target.value)}
+                  placeholder="00.000.000/0000-00"
+                  maxLength={18}
+                  className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
               </div>
+
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Seu nome</label>
-                <input value={name} onChange={(event) => setName(event.target.value)} placeholder="João Silva" className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500" />
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Seu nome</label>
+                <input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="João Silva"
+                  className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
               </div>
+
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">E-mail</label>
-                <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="joao@empresa.com" className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500" />
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">E-mail</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="joao@empresa.com"
+                  className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
               </div>
+
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Senha</label>
-                <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="No mínimo 8 caracteres, com maiúscula, minúscula e número" className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500" />
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Senha</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="No mínimo 8 caracteres"
+                  className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
               </div>
             </div>
 
-            <div className="mt-8 flex justify-between">
-              <button onClick={() => setStep(1)} className="flex items-center gap-1 text-gray-500 hover:text-blue-600">
-                <FiArrowLeft />
+            <div className="mt-8 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-blue-600"
+              >
+                <FiArrowLeft className="h-4 w-4" />
                 Voltar
               </button>
-              <button onClick={() => validateAccountStep() && setStep(3)} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-8 py-3 font-semibold text-white transition hover:bg-blue-700">
-                Continuar
-                <FiArrowRight />
-              </button>
-            </div>
-          </div>
-        )}
 
-        {step === 3 && (
-          <div className="mx-auto max-w-2xl">
-            <h2 className="mb-2 text-center text-2xl font-bold text-gray-900">Cartão de crédito</h2>
-            <p className="mb-2 text-center text-gray-500">Informe os dados do cartão para ativar seu período grátis.</p>
-            <div className="mb-8 flex items-center justify-center gap-2">
-              <FiLock className="h-4 w-4 text-green-600" />
-              <span className="text-sm font-medium text-green-700">Pagamento seguro</span>
-            </div>
-
-            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-              <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Nome do titular</label>
-                  <input value={cardHolder} onChange={(event) => setCardHolder(event.target.value)} placeholder="Nome como está no cartão" className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
-                  <p className="text-sm font-semibold text-blue-900">Primeira cobrança</p>
-                  <p className="mt-1 text-sm text-blue-700">
-                    Você começa agora e a primeira cobrança será em <strong>{firstChargeDate.toLocaleDateString('pt-BR')}</strong>.
-                  </p>
-                </div>
-              </div>
-
-              <StripeField
-                label="Dados do cartão"
-                helper="Preencha os dados do cartão para continuar."
-                error={cardError}
-                containerRef={cardElementRef}
-              />
-
-              {stripeLoading && (
-                <p className="mt-4 text-sm text-gray-500">Carregando campo de pagamento...</p>
-              )}
-
-              {stripeLoadError && (
-                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {stripeLoadError}
-                </div>
-              )}
-
-              {!stripeLoading && (
-                <div className="mt-5 flex flex-col gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
-                  <div className="flex items-center gap-2">
-                    <FiShield className="text-slate-500" />
-                    <span>Seus dados estão protegidos.</span>
-                  </div>
-                  <button type="button" onClick={mount} className="inline-flex items-center gap-2 font-medium text-blue-600 hover:text-blue-800">
-                    <FiRefreshCw className="h-4 w-4" />
-                    Tentar novamente
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-8 flex justify-between">
-              <button onClick={() => setStep(2)} className="flex items-center gap-1 text-gray-500 hover:text-blue-600">
-                <FiArrowLeft />
-                Voltar
-              </button>
-              <button onClick={() => validateCardStep() && setStep(4)} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-8 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50" disabled={stripeLoading}>
+              <button
+                type="button"
+                onClick={() => validateAccountStep() && setStep(3)}
+                className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-8 py-3 font-semibold text-white transition hover:bg-blue-700"
+              >
                 Revisar
                 <FiArrowRight />
               </button>
             </div>
-          </div>
+          </section>
         )}
 
-        {step === 4 && (
-          <div className="mx-auto max-w-xl">
-            <h2 className="mb-8 text-center text-2xl font-bold text-gray-900">Confirme sua assinatura</h2>
+        {step === 3 && (
+          <section className="mx-auto max-w-3xl rounded-[30px] border border-slate-200 bg-white p-8 shadow-sm">
+            <div className="text-center">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-600">Resumo</p>
+              <h2 className="mt-3 text-3xl font-bold text-slate-900">Você está a um passo de ativar sua conta</h2>
+              <p className="mt-3 text-slate-600">
+                O pagamento será concluído em uma página segura da Stripe. Seu teste de 30 dias começa após a confirmação da assinatura.
+              </p>
+            </div>
 
-            <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-                <div>
-                  <p className="font-bold text-gray-900">Plano {selectedPlanData?.name}</p>
-                  <p className="text-sm text-gray-500">{selectedPlanData?.employees}</p>
-                </div>
-                <p className="text-2xl font-extrabold text-gray-900">
-                  R${selectedPlanData?.price}
-                  <span className="text-sm font-normal text-gray-500">/mês</span>
-                </p>
-              </div>
-
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between gap-4">
-                  <span className="text-gray-500">Empresa</span>
-                  <span className="text-right font-medium text-gray-800">{companyName}</span>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-gray-500">Administrador</span>
-                  <span className="text-right font-medium text-gray-800">{name}</span>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-gray-500">E-mail</span>
-                  <span className="text-right font-medium text-gray-800">{email}</span>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-gray-500">Titular do cartão</span>
-                  <span className="text-right font-medium text-gray-800">{cardHolder}</span>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-green-200 bg-green-50 p-4">
-                <div className="flex items-start gap-3">
-                  <FiCreditCard className="mt-0.5 h-5 w-5 shrink-0 text-green-600" />
+            <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-[1.1fr_0.9fr]">
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-5">
                   <div>
-                    <p className="text-sm font-semibold text-green-800">Pagamento confirmado</p>
-                    <p className="mt-1 text-xs text-green-700">
-                      Seu cartão será validado agora para liberar a cobrança automática após o período grátis.
-                    </p>
+                    <p className="text-sm font-medium text-slate-500">Plano selecionado</p>
+                    <h3 className="mt-1 text-2xl font-bold text-slate-900">{plan.name}</h3>
+                    <p className="mt-1 text-sm text-slate-500">{plan.employees}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-3xl font-extrabold text-slate-900">R${plan.price}</p>
+                    <p className="text-sm text-slate-500">por mês</p>
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-3 text-sm text-slate-600">
+                  {plan.features.map((feature) => (
+                    <div key={feature} className="flex items-start gap-2">
+                      <FiCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                      <span>{feature}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-6">
+                <div>
+                  <p className="text-sm font-medium text-slate-500">Empresa</p>
+                  <p className="mt-1 text-base font-semibold text-slate-900">{companyName}</p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium text-slate-500">CNPJ</p>
+                  <p className="mt-1 text-base font-semibold text-slate-900">{cnpj}</p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium text-slate-500">Administrador</p>
+                  <p className="mt-1 text-base font-semibold text-slate-900">{name}</p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium text-slate-500">E-mail</p>
+                  <p className="mt-1 text-base font-semibold text-slate-900">{email}</p>
+                </div>
+
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                  <div className="flex items-start gap-3">
+                    <FiLock className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                    <div>
+                      <p className="font-semibold text-emerald-900">Checkout seguro hospedado pela Stripe</p>
+                      <p className="mt-1 text-sm text-emerald-700">
+                        Cartão, autenticação e gestão de cobrança acontecem direto na Stripe.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                  <div className="flex items-start gap-3">
+                    <FiCreditCard className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
+                    <div>
+                      <p className="font-semibold text-blue-900">30 dias grátis</p>
+                      <p className="mt-1 text-sm text-blue-700">
+                        A cobrança começa automaticamente ao fim do período de teste.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="mt-8 flex justify-between">
-              <button onClick={() => setStep(3)} className="flex items-center gap-1 text-gray-500 hover:text-blue-600">
-                <FiArrowLeft />
+            <div className="mt-8 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-blue-600"
+              >
+                <FiArrowLeft className="h-4 w-4" />
                 Voltar
               </button>
-              <button disabled={loading || stripeLoading || !stripeReady} onClick={handleSubmit} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-8 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50">
-                {loading ? 'Finalizando...' : (
-                  <>
-                    <FiCreditCard />
-                    Ativar 30 dias grátis
-                  </>
-                )}
+
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={loading}
+                className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-8 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? 'Redirecionando...' : 'Ir para pagamento seguro'}
+                {!loading && <FiArrowRight />}
               </button>
             </div>
-          </div>
+          </section>
         )}
       </div>
     </div>

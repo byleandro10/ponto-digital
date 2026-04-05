@@ -4,11 +4,13 @@ import api from '../../services/api';
 import { FiSearch, FiX, FiUsers, FiCalendar, FiActivity } from 'react-icons/fi';
 
 const STATUS_COLORS = {
-  TRIAL: 'bg-blue-900/30 text-blue-400',
+  TRIALING: 'bg-blue-900/30 text-blue-400',
   ACTIVE: 'bg-green-900/30 text-green-400',
   PAST_DUE: 'bg-yellow-900/30 text-yellow-400',
-  CANCELLED: 'bg-red-900/30 text-red-400',
-  EXPIRED: 'bg-gray-800 text-gray-400',
+  UNPAID: 'bg-red-900/30 text-red-400',
+  CANCELED: 'bg-slate-800 text-slate-300',
+  INCOMPLETE: 'bg-slate-800 text-slate-300',
+  INCOMPLETE_EXPIRED: 'bg-slate-800 text-slate-300',
 };
 
 export default function SACompanies() {
@@ -92,10 +94,11 @@ export default function SACompanies() {
             className="bg-gray-900 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-gray-300"
           >
             <option value="">Todos os status</option>
-            <option value="TRIAL">Trial</option>
+            <option value="TRIALING">Trial</option>
             <option value="ACTIVE">Ativo</option>
-            <option value="PAST_DUE">Inadimplente</option>
-            <option value="CANCELLED">Cancelado</option>
+            <option value="PAST_DUE">Pagamento pendente</option>
+            <option value="UNPAID">Não pago</option>
+            <option value="CANCELED">Cancelado</option>
           </select>
         </div>
 
@@ -132,10 +135,10 @@ export default function SACompanies() {
                     </td>
                     <td className="px-4 py-3 text-gray-300 capitalize">{c.plan}</td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-1 rounded-full font-bold ${STATUS_COLORS[c.subscriptionStatus] || STATUS_COLORS.EXPIRED}`}>
+                      <span className={`text-xs px-2 py-1 rounded-full font-bold ${STATUS_COLORS[c.subscriptionStatus] || STATUS_COLORS.INCOMPLETE_EXPIRED}`}>
                         {c.subscriptionStatus}
                       </span>
-                      {c.subscriptionStatus === 'TRIAL' && (
+                      {c.subscriptionStatus === 'TRIALING' && (
                         <span className="text-xs text-gray-500 ml-2">{c.trialDaysLeft}d</span>
                       )}
                     </td>
@@ -235,7 +238,7 @@ export default function SACompanies() {
                             <p className="text-white font-medium">R${parseFloat(p.amount).toFixed(2)}</p>
                             <p className="text-gray-500 text-xs">{new Date(p.createdAt).toLocaleDateString('pt-BR')}</p>
                           </div>
-                          <span className={`text-xs font-bold ${p.status === 'APPROVED' ? 'text-green-400' : p.status === 'REJECTED' ? 'text-red-400' : 'text-yellow-400'}`}>
+                          <span className={`text-xs font-bold ${p.status === 'PAID' ? 'text-green-400' : p.status === 'FAILED' ? 'text-red-400' : 'text-yellow-400'}`}>
                             {p.status}
                           </span>
                         </div>

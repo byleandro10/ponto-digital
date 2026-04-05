@@ -23,9 +23,9 @@ async function getDashboard(req, res) {
     ] = await Promise.all([
       prisma.company.count(),
       prisma.subscription.count({ where: { status: 'ACTIVE' } }),
-      prisma.subscription.count({ where: { status: 'TRIAL' } }),
+      prisma.subscription.count({ where: { status: 'TRIALING' } }),
       prisma.subscription.count({
-        where: { status: 'CANCELLED', cancelledAt: { gte: thirtyDaysAgo } },
+        where: { status: 'CANCELED', cancelledAt: { gte: thirtyDaysAgo } },
       }),
       prisma.employee.count({ where: { active: true } }),
       prisma.timeEntry.count({ where: { createdAt: { gte: startOfMonth } } }),
@@ -59,7 +59,7 @@ async function getDashboard(req, res) {
 
     // Receita total (todos os pagamentos aprovados)
     const totalRevenue = await prisma.payment.aggregate({
-      where: { status: 'APPROVED' },
+      where: { status: 'PAID' },
       _sum: { amount: true },
     });
 
@@ -245,7 +245,7 @@ async function getRevenue(req, res) {
     startDate.setMonth(startDate.getMonth() - parseInt(months));
 
     const payments = await prisma.payment.findMany({
-      where: { status: 'APPROVED', paidAt: { gte: startDate } },
+      where: { status: 'PAID', paidAt: { gte: startDate } },
       include: { subscription: { select: { plan: true } } },
       orderBy: { paidAt: 'asc' },
     });
@@ -266,7 +266,7 @@ async function getRevenue(req, res) {
     });
 
     const totalRevenue = await prisma.payment.aggregate({
-      where: { status: 'APPROVED' },
+      where: { status: 'PAID' },
       _sum: { amount: true },
     });
 
@@ -297,7 +297,7 @@ async function getChurn(req, res) {
 
     const churned = await prisma.subscription.findMany({
       where: {
-        status: { in: ['CANCELLED', 'EXPIRED'] },
+        status: { in: ['CANCELED', 'INCOMPLETE_EXPIRED'] },
         updatedAt: { gte: since },
       },
       include: {
@@ -390,7 +390,7 @@ async function getUsageStats(req, res) {
 
     const activeIds = new Set(activeCompanyIds.map((c) => c.companyId));
     const allActiveCompanies = await prisma.company.findMany({
-      where: { subscriptionStatus: { in: ['TRIAL', 'ACTIVE'] } },
+      where: { subscriptionStatus: { in: ['TRIALING', 'ACTIVE'] } },
       select: { id: true, name: true, createdAt: true },
     });
 

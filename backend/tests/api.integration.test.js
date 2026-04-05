@@ -53,6 +53,6 @@ const prisma = canRunIntegrationSuite ? require('../src/config/database') : null
     expect(res.body.token).toBeDefined();
     expect(res.body.user.email).toBe(payload.email);
     expect(res.body.company.name).toBe(payload.companyName);
-    expect(res.body.subscriptionStatus).toBe('TRIAL');
+    expect(res.body.subscriptionStatus).toBe('INCOMPLETE');
   });
 });

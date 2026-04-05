@@ -6,11 +6,10 @@ const mockPrisma = {
 };
 
 const mockBillingService = {
+  handleCheckoutSessionCompleted: jest.fn(),
   handleStripeCustomerEvent: jest.fn(),
   handleStripeInvoiceEvent: jest.fn(),
   handleStripeSubscriptionEvent: jest.fn(),
-  handleStripePaymentIntentEvent: jest.fn(),
-  handleStripeSetupIntentEvent: jest.fn(),
   handleStripePaymentMethodAttached: jest.fn(),
 };
 
@@ -39,9 +38,26 @@ describe('webhookController', () => {
     mockPrisma.webhookEvent.update.mockResolvedValue({});
   });
 
-  test('processa invoice.payment_succeeded', async () => {
+  test('processa checkout.session.completed', async () => {
     mockStripeService.constructWebhookEvent.mockReturnValue({
-      type: 'invoice.payment_succeeded',
+      id: 'evt_checkout',
+      type: 'checkout.session.completed',
+      data: { object: { id: 'cs_123' } },
+    });
+
+    const req = { body: Buffer.from('{}'), headers: { 'stripe-signature': 'sig' } };
+    const res = mockRes();
+
+    await handleStripeWebhook(req, res);
+
+    expect(mockBillingService.handleCheckoutSessionCompleted).toHaveBeenCalledWith({ id: 'cs_123' });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  test('processa invoice.paid', async () => {
+    mockStripeService.constructWebhookEvent.mockReturnValue({
+      id: 'evt_invoice',
+      type: 'invoice.paid',
       data: { object: { id: 'in_123' } },
     });
 
@@ -50,12 +66,13 @@ describe('webhookController', () => {
 
     await handleStripeWebhook(req, res);
 
-    expect(mockBillingService.handleStripeInvoiceEvent).toHaveBeenCalledWith({ id: 'in_123' });
+    expect(mockBillingService.handleStripeInvoiceEvent).toHaveBeenCalledWith({ id: 'in_123' }, 'invoice.paid');
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
   test('processa customer.subscription.updated', async () => {
     mockStripeService.constructWebhookEvent.mockReturnValue({
+      id: 'evt_subscription',
       type: 'customer.subscription.updated',
       data: { object: { id: 'sub_123' } },
     });

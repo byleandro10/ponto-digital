@@ -2,9 +2,6 @@ const mockPrisma = {
   company: {
     findUnique: jest.fn(),
   },
-  subscription: {
-    findFirst: jest.fn(),
-  },
 };
 
 const mockBillingService = {
@@ -31,7 +28,7 @@ describe('subscriptionGuard billing access', () => {
     jest.clearAllMocks();
   });
 
-  test('bloqueia acesso premium quando o trial expirou sem pagamento valido', async () => {
+  test('blocks access when subscription is incomplete', async () => {
     const token = jwt.sign(
       { id: 'user-1', role: 'ADMIN', companyId: 'company-1', type: 'admin' },
       process.env.JWT_SECRET,
@@ -49,8 +46,8 @@ describe('subscriptionGuard billing access', () => {
 
     mockBillingService.reconcileCompanyBillingState.mockResolvedValue();
     mockPrisma.company.findUnique.mockResolvedValue({
-      subscriptionStatus: 'TRIAL',
-      trialEndsAt: new Date('2026-04-01T00:00:00.000Z'),
+      subscriptionStatus: 'INCOMPLETE',
+      trialEndsAt: null,
     });
 
     await subscriptionGuard(req, res, next);
@@ -58,7 +55,7 @@ describe('subscriptionGuard billing access', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(402);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-      code: 'TRIAL_EXPIRED',
+      code: 'SUBSCRIPTION_INCOMPLETE',
     }));
   });
 });

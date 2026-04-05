@@ -18,7 +18,6 @@ const adjustmentRoutes = require('./routes/adjustmentRoutes');
 const exportRoutes = require('./routes/exportRoutes');
 const adjustmentRequestRoutes = require('./routes/adjustmentRequestRoutes');
 const employeeSelfServiceRoutes = require('./routes/employeeSelfServiceRoutes');
-const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const billingRoutes = require('./routes/billingRoutes');
 const webhookRoutes = require('./routes/webhookRoutes');
 const superAdminRoutes = require('./routes/superAdminRoutes');
@@ -116,7 +115,6 @@ const authLimiter = rateLimit({
 });
 
 app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/super-admin', superAdminRoutes);
 

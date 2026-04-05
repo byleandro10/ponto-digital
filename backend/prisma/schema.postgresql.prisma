@@ -18,8 +18,15 @@ model Company {
   logoUrl            String?
   requireSelfie      Boolean  @default(false)
   geofenceMode       String   @default("off")
-  subscriptionStatus String   @default("TRIAL")
+  subscriptionStatus String   @default("INCOMPLETE")
+  billingStatus      String   @default("INCOMPLETE")
   trialEndsAt        DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean  @default(false)
+  stripeCustomerId   String?  @unique
+  stripeSubscriptionId String? @unique
+  stripePriceId      String?
+  lastInvoiceId      String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -165,57 +172,54 @@ model NotificationSetting {
 }
 
 model Subscription {
-  id                 String    @id @default(uuid())
-  companyId          String
-  plan               String
-  status             String    @default("TRIAL")
-  trialStart         DateTime?
-  trialEndsAt        DateTime?
-  currentPeriodStart DateTime?
-  currentPeriodEnd   DateTime?
-  gracePeriodEnd     DateTime?
-  stripeCustomerId   String?
-  stripeSubscriptionId String? @unique
-  stripePriceId      String?
+  id                    String    @id @default(uuid())
+  companyId             String
+  plan                  String
+  status                String    @default("INCOMPLETE")
+  billingStatus         String    @default("INCOMPLETE")
+  trialStart            DateTime?
+  trialEndsAt           DateTime?
+  currentPeriodStart    DateTime?
+  currentPeriodEnd      DateTime?
+  cancelAtPeriodEnd     Boolean   @default(false)
+  stripeCustomerId      String?
+  stripeSubscriptionId  String?   @unique
+  stripePriceId         String?
   stripePaymentMethodId String?
-  stripeLatestInvoiceId String?
-  stripeSetupIntentId String?
-  mpPreapprovalId    String?   @unique
-  mpCustomerId       String?
-  cancelledAt        DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  stripeCheckoutSessionId String?
+  lastInvoiceId         String?
+  cancelledAt           DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   company  Company   @relation(fields: [companyId], references: [id])
   payments Payment[]
 
   @@index([companyId])
-  @@index([mpPreapprovalId])
   @@index([stripeCustomerId])
   @@index([stripeSubscriptionId])
   @@index([stripePaymentMethodId])
+  @@index([stripeCheckoutSessionId])
 }
 
 model Payment {
-  id             String    @id @default(uuid())
-  subscriptionId String
-  companyId      String
+  id                    String    @id @default(uuid())
+  subscriptionId        String
+  companyId             String
   stripePaymentIntentId String?   @unique
-  stripeInvoiceId String?
+  stripeInvoiceId       String?   @unique
   stripePaymentMethodId String?
-  mpPaymentId    String?   @unique
-  amount         Decimal
-  status         String    @default("PENDING")
-  paidAt         DateTime?
-  failureReason  String?
-  createdAt      DateTime  @default(now())
+  amount                Decimal
+  status                String    @default("PENDING")
+  paidAt                DateTime?
+  failureReason         String?
+  createdAt             DateTime  @default(now())
 
   subscription Subscription @relation(fields: [subscriptionId], references: [id])
   company      Company      @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
   @@index([subscriptionId])
-  @@index([mpPaymentId])
   @@index([stripePaymentIntentId])
   @@index([stripeInvoiceId])
   @@index([stripePaymentMethodId])
