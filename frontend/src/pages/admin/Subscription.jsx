@@ -1,14 +1,32 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import {
+  FiAlertTriangle,
+  FiCheck,
+  FiCreditCard,
+  FiDollarSign,
+  FiLock,
+  FiRefreshCw,
+  FiShield,
+} from 'react-icons/fi';
 import AdminLayout from '../../components/AdminLayout';
 import api from '../../services/api';
-import toast from 'react-hot-toast';
-import { FiCreditCard, FiCheck, FiAlertTriangle, FiDollarSign, FiShield, FiLock } from 'react-icons/fi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useStripeCardSetup } from '../../hooks/useStripeCardSetup';
 
-const PLAN_NAMES = { BASIC: 'Básico', PROFESSIONAL: 'Profissional', ENTERPRISE: 'Empresarial' };
-const PLAN_PRICES = { BASIC: 49, PROFESSIONAL: 99, ENTERPRISE: 199 };
+const PLAN_NAMES = {
+  BASIC: 'Básico',
+  PROFESSIONAL: 'Profissional',
+  ENTERPRISE: 'Empresarial',
+};
+
+const PLAN_PRICES = {
+  BASIC: 49,
+  PROFESSIONAL: 99,
+  ENTERPRISE: 199,
+};
+
 const PLANS = [
   { key: 'BASIC', name: 'Básico', price: 49, features: ['Até 15 funcionários', 'Registro de ponto', 'Relatórios básicos'] },
   { key: 'PROFESSIONAL', name: 'Profissional', price: 99, features: ['Até 50 funcionários', 'Cerca virtual', 'Relatórios avançados', 'Banco de horas'] },
@@ -18,9 +36,11 @@ const PLANS = [
 function StripeField({ label, helper, error, containerRef }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <div className={`w-full rounded-xl border px-4 py-3 bg-white transition ${error ? 'border-red-300 ring-2 ring-red-100' : 'border-gray-300 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500'}`}>
-        <div ref={containerRef} />
+      <label className="mb-1 block text-sm font-medium text-gray-700">{label}</label>
+      <div className={`min-h-[56px] w-full rounded-xl border bg-white px-4 py-4 transition ${
+        error ? 'border-red-300 ring-2 ring-red-100' : 'border-gray-300 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500'
+      }`}>
+        <div ref={containerRef} className="min-h-[24px]" />
       </div>
       <p className={`mt-2 text-xs ${error ? 'text-red-600' : 'text-gray-500'}`}>{error || helper}</p>
     </div>
@@ -30,6 +50,7 @@ function StripeField({ label, helper, error, containerRef }) {
 export default function Subscription() {
   const { user, updateSubscriptionStatus } = useAuth();
   const navigate = useNavigate();
+
   const [subscription, setSubscription] = useState(null);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -41,18 +62,25 @@ export default function Subscription() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+
     try {
-      const [statusRes, paymentsRes] = await Promise.all([
+      const [statusResponse, paymentsResponse] = await Promise.all([
         api.get('/subscriptions/status'),
         api.get('/subscriptions/payments'),
       ]);
-      const sub = statusRes.data.subscription;
-      setSubscription(sub);
-      setPayments(paymentsRes.data.payments || []);
-      if (!sub || ['CANCELLED', 'EXPIRED', 'PAST_DUE'].includes(sub?.status) || (sub?.status === 'TRIAL' && sub?.trialEndsAt && new Date(sub.trialEndsAt) < new Date())) {
+
+      const nextSubscription = statusResponse.data.subscription;
+      setSubscription(nextSubscription);
+      setPayments(paymentsResponse.data.payments || []);
+      setSelectedPlan(nextSubscription?.plan || 'BASIC');
+
+      if (
+        !nextSubscription ||
+        ['CANCELLED', 'EXPIRED', 'PAST_DUE'].includes(nextSubscription?.status) ||
+        (nextSubscription?.status === 'TRIAL' && nextSubscription?.trialEndsAt && new Date(nextSubscription.trialEndsAt) < new Date())
+      ) {
         setShowCardForm(true);
       }
-      setSelectedPlan(sub?.plan || 'BASIC');
     } catch {
       toast.error('Não foi possível carregar os dados da assinatura.');
       setShowCardForm(true);
@@ -66,13 +94,10 @@ export default function Subscription() {
   }, [fetchData]);
 
   const {
-    cardNumberRef,
-    cardExpiryRef,
-    cardCvcRef,
+    cardElementRef,
     stripeReady,
     stripeLoading,
     stripeLoadError,
-    fieldErrors,
     cardError,
     cardComplete,
     mount,
@@ -104,19 +129,17 @@ export default function Subscription() {
       return;
     }
     if (!cardComplete || !stripeReady) {
-      toast.error('Preencha número, validade e código de segurança para continuar.');
+      toast.error('Preencha os dados do cartão no campo seguro da Stripe para continuar.');
       return;
     }
 
     setSubmitting(true);
-    try {
-      const { paymentMethodId, setupIntentId } = await confirmCardSetup({
-        cardHolder,
-      });
 
+    try {
+      const { paymentMethodId, setupIntentId } = await confirmCardSetup({ cardHolder });
       const endpoint = needsReactivation ? '/subscriptions/reactivate' : '/subscriptions/change-plan';
-      const method = needsReactivation ? api.post : api.put;
-      const response = await method(endpoint, {
+      const request = needsReactivation ? api.post : api.put;
+      const response = await request(endpoint, {
         paymentMethodId,
         setupIntentId,
         plan: selectedPlan,
@@ -136,8 +159,12 @@ export default function Subscription() {
   }, [cardComplete, cardError, cardHolder, confirmCardSetup, navigate, needsReactivation, selectedPlan, stripeLoadError, stripeReady, updateSubscriptionStatus]);
 
   const handleCancel = async () => {
-    if (!window.confirm('Tem certeza de que deseja cancelar sua assinatura?')) return;
+    if (!window.confirm('Tem certeza de que deseja cancelar sua assinatura?')) {
+      return;
+    }
+
     setCancelling(true);
+
     try {
       await api.post('/subscriptions/cancel');
       toast.success('Assinatura cancelada com sucesso.');
@@ -150,7 +177,13 @@ export default function Subscription() {
   };
 
   const paymentStatusBadge = (status) => {
-    const colors = { APPROVED: 'text-green-600', PENDING: 'text-yellow-600', REJECTED: 'text-red-600', REFUNDED: 'text-gray-600' };
+    const colors = {
+      APPROVED: 'text-green-600',
+      PENDING: 'text-yellow-600',
+      REJECTED: 'text-red-600',
+      REFUNDED: 'text-gray-600',
+    };
+
     return <span className={`text-xs font-semibold ${colors[status] || 'text-gray-500'}`}>{status}</span>;
   };
 
@@ -158,7 +191,7 @@ export default function Subscription() {
     return (
       <AdminLayout title="Assinatura">
         <div className="flex items-center justify-center p-20">
-          <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
         </div>
       </AdminLayout>
     );
@@ -166,47 +199,52 @@ export default function Subscription() {
 
   return (
     <AdminLayout title="Assinatura">
-      <div className="p-4 lg:p-6 max-w-4xl mx-auto space-y-6">
+      <div className="mx-auto max-w-4xl space-y-6 p-4 lg:p-6">
         {needsReactivation && (
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
             <div className="flex items-start gap-3">
-              <FiAlertTriangle className="w-6 h-6 text-red-500 mt-0.5 shrink-0" />
+              <FiAlertTriangle className="mt-0.5 h-6 w-6 shrink-0 text-red-500" />
               <div>
                 <h3 className="text-lg font-bold text-red-800">Assinatura inativa</h3>
-                <p className="text-sm text-red-600 mt-1">Cadastre um cartão válido para reativar seu acesso e garantir as próximas cobranças automáticas.</p>
+                <p className="mt-1 text-sm text-red-600">Cadastre um cartão válido para reativar seu acesso e garantir as próximas cobranças automáticas.</p>
               </div>
             </div>
           </div>
         )}
 
         {subscription && !needsReactivation && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                <FiCreditCard className="text-blue-600" /> Plano atual
+          <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900">
+                <FiCreditCard className="text-blue-600" />
+                Plano atual
               </h2>
-              <span className="inline-flex px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">{subscription.status}</span>
+              <span className="inline-flex rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">{subscription.status}</span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-gray-50 rounded-xl p-4">
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="rounded-xl bg-gray-50 p-4">
                 <p className="text-sm text-gray-500">Plano</p>
                 <p className="text-xl font-bold text-gray-900">{PLAN_NAMES[subscription.plan] || subscription.plan}</p>
-                <p className="text-sm text-gray-500 mt-1">R${PLAN_PRICES[subscription.plan] || 0}/mês</p>
+                <p className="mt-1 text-sm text-gray-500">R${PLAN_PRICES[subscription.plan] || 0}/mês</p>
               </div>
-              <div className="bg-gray-50 rounded-xl p-4">
+              <div className="rounded-xl bg-gray-50 p-4">
                 <p className="text-sm text-gray-500">Próxima cobrança</p>
-                <p className="text-sm font-bold text-gray-900">{subscription.currentPeriodEnd ? new Date(subscription.currentPeriodEnd).toLocaleDateString('pt-BR') : '-'}</p>
+                <p className="text-sm font-bold text-gray-900">
+                  {subscription.currentPeriodEnd ? new Date(subscription.currentPeriodEnd).toLocaleDateString('pt-BR') : '-'}
+                </p>
               </div>
-              <div className="bg-gray-50 rounded-xl p-4">
+              <div className="rounded-xl bg-gray-50 p-4">
                 <p className="text-sm text-gray-500">Status</p>
                 <p className="text-lg font-bold text-gray-900">{subscription.status}</p>
               </div>
             </div>
-            <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100">
-              <button onClick={() => setShowCardForm(true)} className="text-sm text-blue-600 hover:text-blue-800 transition font-medium">
+
+            <div className="mt-6 flex gap-3 border-t border-gray-100 pt-4">
+              <button onClick={() => setShowCardForm(true)} className="text-sm font-medium text-blue-600 transition hover:text-blue-800">
                 Atualizar cartão ou plano
               </button>
-              <button onClick={handleCancel} disabled={cancelling} className="text-sm text-red-500 hover:text-red-700 transition disabled:opacity-50">
+              <button onClick={handleCancel} disabled={cancelling} className="text-sm text-red-500 transition hover:text-red-700 disabled:opacity-50">
                 {cancelling ? 'Cancelando...' : 'Cancelar assinatura'}
               </button>
             </div>
@@ -214,38 +252,44 @@ export default function Subscription() {
         )}
 
         {showCardForm && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            <h2 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2">
+          <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+            <h2 className="mb-2 flex items-center gap-2 text-lg font-bold text-gray-900">
               <FiCreditCard className="text-blue-600" />
               {needsReactivation ? 'Validar cartão e reativar assinatura' : 'Atualizar plano e cartão'}
             </h2>
-            <p className="text-sm text-gray-500 mb-6">
-              Os campos abaixo são protegidos pela Stripe. Seu servidor não recebe número do cartão, validade nem código de segurança.
+            <p className="mb-6 text-sm text-gray-500">
+              Digite os dados do cartão em um campo seguro da Stripe. Seu servidor não recebe número, validade nem código de segurança.
             </p>
 
             <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 mb-3">Selecione o plano</label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <label className="mb-3 block text-sm font-semibold text-gray-700">Selecione o plano</label>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 {PLANS.map((plan) => (
                   <button
                     key={plan.key}
                     type="button"
                     onClick={() => setSelectedPlan(plan.key)}
-                    className={`relative text-left p-4 rounded-xl border-2 transition-all ${selectedPlan === plan.key ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-gray-200 hover:border-blue-300 bg-white'}`}
+                    className={`relative rounded-xl border-2 p-4 text-left transition-all ${
+                      selectedPlan === plan.key ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-gray-200 bg-white hover:border-blue-300'
+                    }`}
                   >
                     {selectedPlan === plan.key && (
-                      <div className="absolute -top-2 -right-2 w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center">
-                        <FiCheck className="w-3 h-3 text-white" />
+                      <div className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-blue-600">
+                        <FiCheck className="h-3 w-3 text-white" />
                       </div>
                     )}
+
                     <p className="font-bold text-gray-900">{plan.name}</p>
-                    <p className="text-2xl font-extrabold text-blue-600 mt-1">
-                      R${plan.price}<span className="text-sm font-normal text-gray-500">/mês</span>
+                    <p className="mt-1 text-2xl font-extrabold text-blue-600">
+                      R${plan.price}
+                      <span className="text-sm font-normal text-gray-500">/mês</span>
                     </p>
+
                     <ul className="mt-3 space-y-1">
                       {plan.features.map((feature) => (
-                        <li key={feature} className="text-xs text-gray-600 flex items-center gap-1">
-                          <FiCheck className="w-3 h-3 text-green-500 shrink-0" /> {feature}
+                        <li key={feature} className="flex items-center gap-1 text-xs text-gray-600">
+                          <FiCheck className="h-3 w-3 shrink-0 text-green-500" />
+                          {feature}
                         </li>
                       ))}
                     </ul>
@@ -256,35 +300,19 @@ export default function Subscription() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nome do titular</label>
-                <input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="Nome como está no cartão" className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" />
+                <label className="mb-1 block text-sm font-medium text-gray-700">Nome do titular</label>
+                <input value={cardHolder} onChange={(event) => setCardHolder(event.target.value)} placeholder="Nome como está no cartão" className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500" />
               </div>
 
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="md:col-span-2">
-                  <StripeField
-                    label="Número do cartão"
-                    helper="Digite o número do cartão no campo seguro da Stripe."
-                    error={fieldErrors.cardNumber}
-                    containerRef={cardNumberRef}
-                  />
-                </div>
-                <StripeField
-                  label="Validade"
-                  helper="Mês e ano de vencimento."
-                  error={fieldErrors.cardExpiry}
-                  containerRef={cardExpiryRef}
-                />
-                <StripeField
-                  label="Código de segurança"
-                  helper="CVC ou CVV do cartão."
-                  error={fieldErrors.cardCvc}
-                  containerRef={cardCvcRef}
-                />
-              </div>
+              <StripeField
+                label="Dados do cartão"
+                helper="Digite número, validade e código de segurança no campo protegido da Stripe."
+                error={cardError}
+                containerRef={cardElementRef}
+              />
 
               {stripeLoading && (
-                <p className="text-sm text-gray-500">Carregando o formulário seguro de pagamento...</p>
+                <p className="text-sm text-gray-500">Carregando o campo seguro de pagamento...</p>
               )}
 
               {stripeLoadError && (
@@ -293,30 +321,40 @@ export default function Subscription() {
                 </div>
               )}
 
-              {!stripeLoading && !stripeLoadError && (
-                <div className="flex items-center justify-between gap-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              {!stripeLoading && (
+                <div className="flex flex-col gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
                   <div className="flex items-center gap-2">
                     <FiLock className="text-slate-500" />
                     <span>Pagamento seguro com Stripe, tokenização e autenticação quando necessário.</span>
                   </div>
-                  <button type="button" onClick={mount} className="text-blue-600 hover:text-blue-800 font-medium">
-                    Recarregar campos
+                  <button type="button" onClick={mount} className="inline-flex items-center gap-2 font-medium text-blue-600 hover:text-blue-800">
+                    <FiRefreshCw className="h-4 w-4" />
+                    Recarregar campo
                   </button>
                 </div>
               )}
 
-              <div className="flex items-center gap-4 text-xs text-gray-500 pt-2">
-                <span className="flex items-center gap-1"><FiLock /> Criptografia SSL</span>
-                <span className="flex items-center gap-1"><FiShield /> Stripe</span>
-                <span className="flex items-center gap-1"><FiCreditCard /> Cobrança segura</span>
+              <div className="flex items-center gap-4 pt-2 text-xs text-gray-500">
+                <span className="flex items-center gap-1">
+                  <FiLock />
+                  Criptografia SSL
+                </span>
+                <span className="flex items-center gap-1">
+                  <FiShield />
+                  Stripe
+                </span>
+                <span className="flex items-center gap-1">
+                  <FiCreditCard />
+                  Cobrança segura
+                </span>
               </div>
 
               <div className="flex gap-3 pt-2">
-                <button onClick={handleSubmit} disabled={submitting || stripeLoading || !stripeReady} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition disabled:opacity-50 flex items-center justify-center gap-2">
+                <button onClick={handleSubmit} disabled={submitting || stripeLoading || !stripeReady} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50">
                   {submitting ? 'Processando...' : needsReactivation ? 'Reativar assinatura' : 'Salvar cartão e plano'}
                 </button>
                 {!needsReactivation && (
-                  <button onClick={() => setShowCardForm(false)} className="px-6 py-3 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50 transition font-medium">
+                  <button onClick={() => setShowCardForm(false)} className="rounded-xl border border-gray-300 px-6 py-3 font-medium text-gray-600 transition hover:bg-gray-50">
                     Cancelar
                   </button>
                 )}
@@ -325,15 +363,17 @@ export default function Subscription() {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-          <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-            <FiDollarSign className="text-green-600" /> Histórico de pagamentos
+        <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+          <h2 className="mb-4 flex items-center gap-2 text-lg font-bold text-gray-900">
+            <FiDollarSign className="text-green-600" />
+            Histórico de pagamentos
           </h2>
+
           {payments.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-gray-500 border-b border-gray-100">
+                  <tr className="border-b border-gray-100 text-left text-gray-500">
                     <th className="pb-3 font-medium">Data</th>
                     <th className="pb-3 font-medium">Valor</th>
                     <th className="pb-3 font-medium">Status</th>
@@ -343,7 +383,7 @@ export default function Subscription() {
                   {payments.map((payment) => (
                     <tr key={payment.id} className="border-b border-gray-50">
                       <td className="py-3 text-gray-800">{new Date(payment.createdAt).toLocaleDateString('pt-BR')}</td>
-                      <td className="py-3 text-gray-800 font-semibold">R${parseFloat(payment.amount).toFixed(2)}</td>
+                      <td className="py-3 font-semibold text-gray-800">R${parseFloat(payment.amount).toFixed(2)}</td>
                       <td className="py-3">{paymentStatusBadge(payment.status)}</td>
                     </tr>
                   ))}
@@ -351,7 +391,7 @@ export default function Subscription() {
               </table>
             </div>
           ) : (
-            <p className="text-gray-400 text-sm text-center py-6">Nenhum pagamento registrado ainda.</p>
+            <p className="py-6 text-center text-sm text-gray-400">Nenhum pagamento registrado ainda.</p>
           )}
         </div>
       </div>

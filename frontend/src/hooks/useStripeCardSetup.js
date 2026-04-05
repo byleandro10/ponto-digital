@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../services/api';
-import { BILLING_REQUEST_TIMEOUT_MS, getStripe } from '../utils/stripe';
+import { BILLING_REQUEST_TIMEOUT_MS, STRIPE_LOAD_TIMEOUT_MS, getStripe } from '../utils/stripe';
 
-const BASE_STYLE = {
+const CARD_STYLE = {
   base: {
     color: '#111827',
     fontFamily: '"Inter", system-ui, sans-serif',
@@ -17,129 +17,108 @@ const BASE_STYLE = {
   },
 };
 
-function mapElementName(elementType) {
-  if (elementType === 'cardNumber') return 'Número do cartão';
-  if (elementType === 'cardExpiry') return 'Validade';
-  if (elementType === 'cardCvc') return 'Código de segurança';
-  return 'Cartão';
+function getFriendlyStripeError(error) {
+  if (!error) {
+    return 'Não foi possível validar o cartão.';
+  }
+
+  if (error.type === 'validation_error' || error.type === 'card_error') {
+    return error.message || 'Revise os dados do cartão e tente novamente.';
+  }
+
+  return error.message || 'Não foi possível validar o cartão.';
 }
 
 export function useStripeCardSetup({ enabled, email }) {
-  const cardNumberRef = useRef(null);
-  const cardExpiryRef = useRef(null);
-  const cardCvcRef = useRef(null);
+  const cardElementRef = useRef(null);
   const stripeRef = useRef(null);
-  const elementsRef = useRef(null);
-  const mountedRef = useRef(false);
-  const stripeElementsRef = useRef({
-    cardNumber: null,
-    cardExpiry: null,
-    cardCvc: null,
-  });
+  const stripeElementsRef = useRef(null);
+  const mountedElementRef = useRef(null);
+  const mountTimeoutRef = useRef(null);
+  const readyRef = useRef(false);
 
   const [stripeLoading, setStripeLoading] = useState(false);
   const [stripeReady, setStripeReady] = useState(false);
   const [stripeLoadError, setStripeLoadError] = useState('');
-  const [fieldErrors, setFieldErrors] = useState({
-    cardNumber: '',
-    cardExpiry: '',
-    cardCvc: '',
-  });
-  const [fieldComplete, setFieldComplete] = useState({
-    cardNumber: false,
-    cardExpiry: false,
-    cardCvc: false,
-  });
+  const [cardError, setCardError] = useState('');
+  const [cardComplete, setCardComplete] = useState(false);
 
-  const teardown = useCallback(() => {
-    Object.values(stripeElementsRef.current).forEach((element) => {
-      try {
-        element?.unmount();
-        element?.destroy();
-      } catch {
-        // noop
-      }
-    });
-
-    stripeElementsRef.current = {
-      cardNumber: null,
-      cardExpiry: null,
-      cardCvc: null,
-    };
-    elementsRef.current = null;
-    mountedRef.current = false;
-    setStripeReady(false);
+  const clearMountTimeout = useCallback(() => {
+    if (mountTimeoutRef.current) {
+      window.clearTimeout(mountTimeoutRef.current);
+      mountTimeoutRef.current = null;
+    }
   }, []);
 
+  const teardown = useCallback(() => {
+    clearMountTimeout();
+
+    try {
+      mountedElementRef.current?.unmount();
+      mountedElementRef.current?.destroy();
+    } catch {
+      // noop
+    }
+
+    mountedElementRef.current = null;
+    stripeElementsRef.current = null;
+    readyRef.current = false;
+    setStripeReady(false);
+    setCardComplete(false);
+    setCardError('');
+  }, [clearMountTimeout]);
+
   const mount = useCallback(async () => {
-    if (!enabled) {
+    if (!enabled || !cardElementRef.current) {
       return;
     }
 
     teardown();
     setStripeLoading(true);
     setStripeLoadError('');
-    setFieldErrors({
-      cardNumber: '',
-      cardExpiry: '',
-      cardCvc: '',
-    });
-    setFieldComplete({
-      cardNumber: false,
-      cardExpiry: false,
-      cardCvc: false,
-    });
 
     try {
       const stripe = await getStripe();
       stripeRef.current = stripe;
 
-      const elements = stripe.elements();
-      elementsRef.current = elements;
+      const elements = stripe.elements({
+        locale: 'pt-BR',
+      });
 
-      const cardNumber = elements.create('cardNumber', { style: BASE_STYLE });
-      const cardExpiry = elements.create('cardExpiry', { style: BASE_STYLE });
-      const cardCvc = elements.create('cardCvc', { style: BASE_STYLE });
+      stripeElementsRef.current = elements;
 
-      const bindEvents = (element, elementType) => {
-        element.on('change', (event) => {
-          setFieldComplete((previous) => ({
-            ...previous,
-            [elementType]: Boolean(event.complete),
-          }));
+      const cardElement = elements.create('card', {
+        style: CARD_STYLE,
+        hidePostalCode: true,
+      });
 
-          setFieldErrors((previous) => ({
-            ...previous,
-            [elementType]: event.error?.message || '',
-          }));
-        });
+      cardElement.on('change', (event) => {
+        setCardComplete(Boolean(event.complete));
+        setCardError(event.error?.message || '');
+      });
 
-        element.on('ready', () => {
-          setStripeReady(true);
-        });
-      };
+      cardElement.on('ready', () => {
+        readyRef.current = true;
+        clearMountTimeout();
+        setStripeReady(true);
+      });
 
-      bindEvents(cardNumber, 'cardNumber');
-      bindEvents(cardExpiry, 'cardExpiry');
-      bindEvents(cardCvc, 'cardCvc');
+      cardElement.mount(cardElementRef.current);
+      mountedElementRef.current = cardElement;
 
-      cardNumber.mount(cardNumberRef.current);
-      cardExpiry.mount(cardExpiryRef.current);
-      cardCvc.mount(cardCvcRef.current);
-
-      stripeElementsRef.current = {
-        cardNumber,
-        cardExpiry,
-        cardCvc,
-      };
-      mountedRef.current = true;
+      mountTimeoutRef.current = window.setTimeout(() => {
+        if (!readyRef.current) {
+          setStripeLoadError('Os campos seguros da Stripe não ficaram prontos para digitação. Tente novamente ou desative extensões que bloqueiam recursos externos.');
+          setStripeReady(false);
+        }
+      }, STRIPE_LOAD_TIMEOUT_MS);
     } catch (error) {
       setStripeLoadError(error.message || 'Não foi possível carregar o formulário seguro de cartão.');
       setStripeReady(false);
     } finally {
       setStripeLoading(false);
     }
-  }, [enabled, teardown]);
+  }, [clearMountTimeout, enabled, teardown]);
 
   useEffect(() => {
     if (!enabled) {
@@ -155,8 +134,8 @@ export function useStripeCardSetup({ enabled, email }) {
   }, [enabled, mount, teardown]);
 
   const confirmCardSetup = useCallback(async ({ cardHolder }) => {
-    if (!stripeRef.current || !mountedRef.current || !stripeElementsRef.current.cardNumber) {
-      throw new Error('O formulário do cartão ainda não está pronto.');
+    if (!stripeRef.current || !mountedElementRef.current || !readyRef.current) {
+      throw new Error('O formulário seguro do cartão ainda não está pronto.');
     }
 
     const response = await api.post(
@@ -174,7 +153,7 @@ export function useStripeCardSetup({ enabled, email }) {
 
     const result = await stripeRef.current.confirmCardSetup(clientSecret, {
       payment_method: {
-        card: stripeElementsRef.current.cardNumber,
+        card: mountedElementRef.current,
         billing_details: {
           name: cardHolder || undefined,
           email: email || undefined,
@@ -183,8 +162,7 @@ export function useStripeCardSetup({ enabled, email }) {
     });
 
     if (result.error) {
-      const fieldLabel = mapElementName(result.error.param);
-      throw new Error(result.error.message || `Não foi possível validar ${fieldLabel.toLowerCase()}.`);
+      throw new Error(getFriendlyStripeError(result.error));
     }
 
     if (!result.setupIntent?.payment_method) {
@@ -197,18 +175,12 @@ export function useStripeCardSetup({ enabled, email }) {
     };
   }, [email]);
 
-  const cardComplete = fieldComplete.cardNumber && fieldComplete.cardExpiry && fieldComplete.cardCvc;
-  const firstFieldError = fieldErrors.cardNumber || fieldErrors.cardExpiry || fieldErrors.cardCvc || '';
-
   return {
-    cardNumberRef,
-    cardExpiryRef,
-    cardCvcRef,
+    cardElementRef,
     stripeReady,
     stripeLoading,
     stripeLoadError,
-    fieldErrors,
-    cardError: firstFieldError,
+    cardError,
     cardComplete,
     mount,
     confirmCardSetup,
