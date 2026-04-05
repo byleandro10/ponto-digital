@@ -218,4 +218,42 @@ describe('authController login compatibility', () => {
       error: 'Nao foi possivel carregar os dados da empresa. Entre em contato com o suporte.',
     });
   });
+
+  test('loginAdmin returns 503 when company schema is still incompatible after fallback attempts', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      name: 'Admin Teste',
+      email: 'admin@empresa.com',
+      password: 'hashed-password',
+      role: 'ADMIN',
+      companyId: 'company-1',
+    });
+    bcrypt.compare.mockResolvedValue(true);
+    mockPrisma.company.findUnique
+      .mockRejectedValueOnce({
+        code: 'P2022',
+        message: 'Unknown column subscriptionStatus in field list',
+      })
+      .mockRejectedValueOnce({
+        code: 'P2022',
+        message: 'Unknown column plan in field list',
+      });
+
+    const req = {
+      body: {
+        email: 'admin@empresa.com',
+        password: 'SenhaForte123',
+      },
+      requestId: 'req-drift',
+    };
+    const res = makeRes();
+
+    await loginAdmin(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'O sistema esta concluindo uma atualizacao interna. Tente novamente em instantes.',
+      requestId: 'req-drift',
+    });
+  });
 });

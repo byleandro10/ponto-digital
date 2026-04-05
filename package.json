@@ -16,7 +16,7 @@
     "prisma:generate": "npx prisma generate --schema=backend/prisma/schema.prisma",
     "db:prepare": "node backend/scripts/ensure-db-schema.js",
     "migrate:data:mysql": "node backend/scripts/migrate-postgres-to-mysql.js",
-    "build": "npm run install:frontend && npm run prisma:generate && npm run build:frontend && npm run sync:root-dist",
+    "build": "npm run install:frontend && npm run prisma:generate && npm run db:prepare && npm run build:frontend && npm run sync:root-dist",
     "start": "npm run db:prepare && node backend/src/app.js",
     "postinstall": "npx prisma generate --schema=backend/prisma/schema.prisma",
     "db:push": "npx prisma db push --schema=backend/prisma/schema.prisma",

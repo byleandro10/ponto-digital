@@ -371,6 +371,13 @@ async function register(req, res) {
       return res.status(400).json({ error: `${field} já cadastrado.` });
     }
 
+    if (isLegacyBillingSchemaError(error)) {
+      return res.status(503).json({
+        error: 'O sistema esta concluindo uma atualizacao interna. Tente novamente em instantes.',
+        requestId: req.requestId || null,
+      });
+    }
+
     return res.status(500).json({
       error: 'Erro ao registrar a empresa. Tente novamente.',
       requestId: req.requestId || null,
@@ -447,6 +454,13 @@ async function loginAdmin(req, res) {
       message: error.message,
       meta: error.meta || null,
     });
+    if (isLegacyBillingSchemaError(error)) {
+      return res.status(503).json({
+        error: 'O sistema esta concluindo uma atualizacao interna. Tente novamente em instantes.',
+        requestId: req.requestId || null,
+      });
+    }
+
     return res.status(500).json({
       error: 'Erro ao fazer login.',
       requestId: req.requestId || null,
@@ -524,6 +538,13 @@ async function loginEmployee(req, res) {
       message: error.message,
       meta: error.meta || null,
     });
+    if (isLegacyBillingSchemaError(error)) {
+      return res.status(503).json({
+        error: 'O sistema esta concluindo uma atualizacao interna. Tente novamente em instantes.',
+        requestId: req.requestId || null,
+      });
+    }
+
     return res.status(500).json({
       error: 'Erro ao fazer login.',
       requestId: req.requestId || null,

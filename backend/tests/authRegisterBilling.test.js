@@ -252,6 +252,43 @@ describe('authController register hosted billing flow', () => {
     }));
   });
 
+  test('returns 503 when company schema is still incompatible after all fallback attempts', async () => {
+    mockPrisma.company.create
+      .mockRejectedValueOnce({
+        code: 'P2022',
+        message: 'Unknown column billingStatus in field list',
+      })
+      .mockRejectedValueOnce({
+        code: 'P2022',
+        message: 'Unknown column subscriptionStatus in field list',
+      })
+      .mockRejectedValueOnce({
+        code: 'P2022',
+        message: 'Unknown column plan in field list',
+      });
+
+    const req = {
+      body: {
+        companyName: 'Empresa',
+        cnpj: '34192212000130',
+        name: 'Admin Teste',
+        email: 'novo@empresa.com',
+        password: 'SenhaForte123',
+        plan: 'basic',
+      },
+      requestId: 'req-register-drift',
+    };
+    const res = makeRes();
+
+    await register(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'O sistema esta concluindo uma atualizacao interna. Tente novamente em instantes.',
+      requestId: 'req-register-drift',
+    });
+  });
+
   test('falls back when the local subscription table is still incompatible', async () => {
     mockPrisma.subscription.create
       .mockRejectedValueOnce({

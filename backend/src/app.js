@@ -24,6 +24,7 @@ const superAdminRoutes = require('./routes/superAdminRoutes');
 const { subscriptionGuard } = require('./middlewares/subscriptionGuard');
 const { logSecurityEvent } = require('./utils/securityLogger');
 const prisma = require('./config/database');
+const { getSchemaDiagnostics } = require('./services/schemaHealthService');
 const { ipKeyGenerator } = rateLimit;
 
 const app = express();
@@ -151,9 +152,17 @@ app.use('/api/employee', subscriptionGuard, employeeSelfServiceRoutes);
 app.get('/api/health', async (req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
-    res.json({
+    const schema = await getSchemaDiagnostics(prisma);
+    const statusCode = schema.ok ? 200 : 503;
+
+    res.status(statusCode).json({
       status: 'OK',
       database: 'OK',
+      schema: schema.ok ? 'OK' : 'DRIFT',
+      schemaIssues: {
+        missingTables: schema.missingTables.length,
+        missingColumns: schema.missingColumns.length,
+      },
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -210,6 +219,25 @@ if (require.main === module) {
     prisma.$connect()
       .then(() => {
         console.log('[startup] conexao inicial com banco estabelecida com sucesso.');
+        return getSchemaDiagnostics(prisma);
+      })
+      .then((schema) => {
+        if (!schema) {
+          return;
+        }
+
+        if (schema.ok) {
+          console.log('[startup] schema MySQL sincronizado com o projeto.', {
+            databaseName: schema.databaseName,
+          });
+          return;
+        }
+
+        console.error('[startup] schema drift detectado no MySQL.', {
+          databaseName: schema.databaseName,
+          missingTables: schema.missingTables,
+          missingColumns: schema.missingColumns,
+        });
       })
       .catch((error) => {
         console.error('[startup] falha ao conectar ao banco:', {
