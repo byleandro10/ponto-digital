@@ -135,21 +135,7 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-const authLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  validate: false,
-  passOnStoreError: true,
-  keyGenerator: buildRateLimitKey,
-  handler: (req, res) => {
-    logSecurityEvent(req, 'auth_rate_limit_exceeded');
-    res.status(429).json({ error: 'Muitas tentativas de login. Aguarde 1 minuto.' });
-  },
-});
-
-app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/super-admin', superAdminRoutes);
 

@@ -130,4 +130,25 @@ describe('Security route protections', () => {
     expect(response.status).toBe(400);
     expect(response.body.error).toMatch(/campos nao permitidos/i);
   });
+
+  test('limits repeated login attempts with 429 instead of 500', async () => {
+    const app = buildApp('/api/auth', authRoutes);
+
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      const response = await request(app)
+        .post('/api/auth/login/admin')
+        .set('X-Forwarded-For', '203.0.113.10')
+        .send({ email: 'admin@example.com', password: 'secret123' });
+
+      expect(response.status).toBe(200);
+    }
+
+    const limitedResponse = await request(app)
+      .post('/api/auth/login/admin')
+      .set('X-Forwarded-For', '203.0.113.10')
+      .send({ email: 'admin@example.com', password: 'secret123' });
+
+    expect(limitedResponse.status).toBe(429);
+    expect(limitedResponse.body.error).toMatch(/aguarde 1 minuto/i);
+  });
 });

@@ -10,10 +10,18 @@ const {
 const { authMiddleware, employeeAuth } = require('../middlewares/auth');
 const { roleGuard } = require('../middlewares/roleGuard');
 const { allowBodyFields } = require('../middlewares/requestGuard');
+const { createSimpleRateLimit } = require('../middlewares/simpleRateLimit');
+
+const loginAttemptLimiter = createSimpleRateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  errorMessage: 'Muitas tentativas de login. Aguarde 1 minuto.',
+  eventName: 'auth_rate_limit_exceeded',
+});
 
 router.post('/register', allowBodyFields(['companyName', 'cnpj', 'name', 'email', 'password', 'plan']), register);
-router.post('/login/admin', allowBodyFields(['email', 'password']), loginAdmin);
-router.post('/login/employee', allowBodyFields(['cpf', 'password']), loginEmployee);
+router.post('/login/admin', loginAttemptLimiter, allowBodyFields(['email', 'password']), loginAdmin);
+router.post('/login/employee', loginAttemptLimiter, allowBodyFields(['cpf', 'password']), loginEmployee);
 
 router.put(
   '/change-password/admin',
