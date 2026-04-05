@@ -35,6 +35,26 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
   process.exit(1);
 }
 
+const trustProxySetting = (() => {
+  const rawValue = String(process.env.TRUST_PROXY || '').trim();
+
+  if (!rawValue) {
+    return process.env.NODE_ENV === 'production' ? 1 : false;
+  }
+
+  if (rawValue === 'true') return true;
+  if (rawValue === 'false') return false;
+
+  const numericValue = Number(rawValue);
+  if (!Number.isNaN(numericValue)) {
+    return numericValue;
+  }
+
+  return rawValue;
+})();
+
+app.set('trust proxy', trustProxySetting);
+
 app.use(helmet({
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   crossOriginEmbedderPolicy: false,
