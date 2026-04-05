@@ -189,6 +189,10 @@ describe('authController register hosted billing flow', () => {
         code: 'P2022',
         message: 'Unknown column stripeCheckoutSessionId in field list',
       })
+      .mockRejectedValueOnce({
+        code: 'P2022',
+        message: 'Unknown column subscriptionStatus in field list',
+      })
       .mockResolvedValueOnce({
         id: 'company-1',
         name: 'Empresa',
@@ -211,15 +215,15 @@ describe('authController register hosted billing flow', () => {
 
     await register(req, res);
 
-    expect(mockPrisma.company.create).toHaveBeenCalledTimes(3);
-    expect(mockPrisma.company.create.mock.calls[2][0].data).toEqual(
+    expect(mockPrisma.company.create).toHaveBeenCalledTimes(4);
+    expect(mockPrisma.company.create.mock.calls[3][0].data).toEqual(
       expect.not.objectContaining({
         subscriptions: expect.anything(),
+        subscriptionStatus: expect.anything(),
         billingStatus: expect.anything(),
         cancelAtPeriodEnd: expect.anything(),
       })
     );
-    expect(mockPrisma.company.create.mock.calls[2][0].data.subscriptionStatus).toBe('INCOMPLETE');
     expect(res.status).toHaveBeenCalledWith(201);
   });
 

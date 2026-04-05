@@ -118,6 +118,13 @@ async function createCompanyWithBillingCompatibility(payload) {
       includeSubscriptionStatus: false,
       includeSubscriptionHostedBillingFields: false,
     },
+    {
+      includeCompanySubscriptionStatus: false,
+      includeHostedBillingFields: false,
+      includeLocalSubscription: false,
+      includeSubscriptionStatus: false,
+      includeSubscriptionHostedBillingFields: false,
+    },
   ];
 
   let lastCompatibilityError = null;
@@ -264,7 +271,7 @@ async function register(req, res) {
         cnpj: company.cnpj,
         plan: company.plan,
       },
-      subscriptionStatus: SUBSCRIPTION_STATUS.INCOMPLETE,
+      subscriptionStatus: company.subscriptionStatus || SUBSCRIPTION_STATUS.INCOMPLETE,
       trialEndsAt: null,
     });
   } catch (error) {
