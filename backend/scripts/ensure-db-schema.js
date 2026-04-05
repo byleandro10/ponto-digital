@@ -1,31 +1,13 @@
-const { execSync } = require('child_process');
 const mysql = require('mysql2/promise');
 const { getResolvedDatabaseUrl } = require('../src/config/databaseConfig');
 const {
   getCurrentDatabaseName,
   prepareBillingUniqueColumns,
 } = require('../src/services/dbPrepareService');
-
-function shouldRetryWithAcceptDataLoss(error) {
-  const output = [
-    error?.message,
-    error?.stdout?.toString?.(),
-    error?.stderr?.toString?.(),
-  ]
-    .filter(Boolean)
-    .join('\n');
-
-  return /accept-data-loss|there might be data loss|use the --accept-data-loss flag/i.test(output);
-}
-
-function runPrismaDbPush({ acceptDataLoss = false } = {}) {
-  const acceptDataLossFlag = acceptDataLoss ? ' --accept-data-loss' : '';
-  const command = `npx prisma db push --skip-generate --schema=backend/prisma/schema.prisma${acceptDataLossFlag}`;
-
-  execSync(command, {
-    stdio: 'inherit',
-  });
-}
+const {
+  runPrismaDbPush,
+  shouldRetryWithAcceptDataLoss,
+} = require('../src/services/prismaSchemaSyncService');
 
 async function cleanupLegacyBillingData(databaseUrl) {
   const connection = await mysql.createConnection(databaseUrl);
