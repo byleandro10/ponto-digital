@@ -24,6 +24,7 @@ const superAdminRoutes = require('./routes/superAdminRoutes');
 const { subscriptionGuard } = require('./middlewares/subscriptionGuard');
 const { logSecurityEvent } = require('./utils/securityLogger');
 const prisma = require('./config/database');
+const { ipKeyGenerator } = rateLimit;
 
 const app = express();
 const frontendDistPath = path.resolve(__dirname, '..', '..', 'frontend', 'dist');
@@ -111,11 +112,22 @@ app.use(cors({
 app.use('/api/webhooks', webhookRoutes);
 app.use(express.json({ limit: '2mb' }));
 
+function buildRateLimitKey(req) {
+  const ip = typeof req.ip === 'string' && req.ip
+    ? req.ip
+    : (req.socket?.remoteAddress || req.connection?.remoteAddress || '127.0.0.1');
+
+  return ipKeyGenerator(String(ip).replace(/^::ffff:/, ''));
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
+  passOnStoreError: true,
+  keyGenerator: buildRateLimitKey,
   handler: (req, res) => {
     logSecurityEvent(req, 'global_rate_limit_exceeded');
     res.status(429).json({ error: 'Muitas requisicoes. Tente novamente em 15 minutos.' });
@@ -128,6 +140,9 @@ const authLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
+  passOnStoreError: true,
+  keyGenerator: buildRateLimitKey,
   handler: (req, res) => {
     logSecurityEvent(req, 'auth_rate_limit_exceeded');
     res.status(429).json({ error: 'Muitas tentativas de login. Aguarde 1 minuto.' });
