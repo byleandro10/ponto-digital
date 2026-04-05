@@ -15,6 +15,76 @@ const {
   getPlanConfig,
 } = require('../config/billingConfig');
 
+function isMissingBillingColumnError(error) {
+  const message = String(error?.message || error?.meta?.message || '');
+  return error?.code === 'P2022' || /unknown column|does not exist/i.test(message);
+}
+
+function buildCompanyRegistrationCreateInput({
+  companyName,
+  cnpj,
+  plan,
+  name,
+  email,
+  hashedPassword,
+  includeHostedBillingFields = true,
+}) {
+  const companyData = {
+    name: companyName,
+    cnpj,
+    plan: getPlanConfig(plan).slug,
+    subscriptionStatus: SUBSCRIPTION_STATUS.INCOMPLETE,
+    users: {
+      create: {
+        name,
+        email,
+        password: hashedPassword,
+        role: 'ADMIN',
+      },
+    },
+    subscriptions: {
+      create: {
+        plan,
+        status: SUBSCRIPTION_STATUS.INCOMPLETE,
+      },
+    },
+  };
+
+  if (includeHostedBillingFields) {
+    companyData.billingStatus = BILLING_STATUS.INCOMPLETE;
+    companyData.cancelAtPeriodEnd = false;
+    companyData.subscriptions.create.billingStatus = BILLING_STATUS.INCOMPLETE;
+    companyData.subscriptions.create.cancelAtPeriodEnd = false;
+  }
+
+  return {
+    data: companyData,
+    include: { users: true },
+  };
+}
+
+async function createCompanyWithBillingCompatibility(payload) {
+  try {
+    return await prisma.company.create(
+      buildCompanyRegistrationCreateInput({
+        ...payload,
+        includeHostedBillingFields: true,
+      })
+    );
+  } catch (error) {
+    if (!isMissingBillingColumnError(error)) {
+      throw error;
+    }
+
+    return prisma.company.create(
+      buildCompanyRegistrationCreateInput({
+        ...payload,
+        includeHostedBillingFields: false,
+      })
+    );
+  }
+}
+
 async function trackLoginDirect(companyId, type) {
   try {
     const today = new Date();
@@ -103,32 +173,13 @@ async function register(req, res) {
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    const company = await prisma.company.create({
-      data: {
-        name: companyName,
-        cnpj,
-        plan: getPlanConfig(plan).slug,
-        subscriptionStatus: SUBSCRIPTION_STATUS.INCOMPLETE,
-        billingStatus: BILLING_STATUS.INCOMPLETE,
-        cancelAtPeriodEnd: false,
-        users: {
-          create: {
-            name,
-            email,
-            password: hashedPassword,
-            role: 'ADMIN',
-          },
-        },
-        subscriptions: {
-          create: {
-            plan,
-            status: SUBSCRIPTION_STATUS.INCOMPLETE,
-            billingStatus: BILLING_STATUS.INCOMPLETE,
-            cancelAtPeriodEnd: false,
-          },
-        },
-      },
-      include: { users: true },
+    const company = await createCompanyWithBillingCompatibility({
+      companyName,
+      cnpj,
+      plan,
+      name,
+      email,
+      hashedPassword,
     });
 
     createdCompanyId = company.id;

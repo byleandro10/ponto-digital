@@ -113,6 +113,62 @@ describe('authController register hosted billing flow', () => {
     }));
   });
 
+  test('falls back to legacy create payload when hosted billing columns are not in the database yet', async () => {
+    mockPrisma.company.create
+      .mockRejectedValueOnce({
+        code: 'P2022',
+        message: 'The column `billingStatus` does not exist in the current database.',
+      })
+      .mockResolvedValueOnce({
+        id: 'company-1',
+        name: 'Empresa',
+        cnpj: '34.192.212/0001-30',
+        plan: 'professional',
+        users: [{ id: 'user-1', name: 'Admin Teste', email: 'novo@empresa.com', role: 'ADMIN' }],
+      });
+
+    const req = {
+      body: {
+        companyName: 'Empresa',
+        cnpj: '34192212000130',
+        name: 'Admin Teste',
+        email: 'novo@empresa.com',
+        password: 'SenhaForte123',
+        plan: 'professional',
+      },
+    };
+    const res = makeRes();
+
+    await register(req, res);
+
+    expect(mockPrisma.company.create).toHaveBeenCalledTimes(2);
+    expect(mockPrisma.company.create.mock.calls[0][0]).toEqual(expect.objectContaining({
+      data: expect.objectContaining({
+        billingStatus: 'INCOMPLETE',
+        cancelAtPeriodEnd: false,
+        subscriptions: expect.objectContaining({
+          create: expect.objectContaining({
+            billingStatus: 'INCOMPLETE',
+            cancelAtPeriodEnd: false,
+          }),
+        }),
+      }),
+    }));
+    expect(mockPrisma.company.create.mock.calls[1][0]).toEqual(expect.objectContaining({
+      data: expect.not.objectContaining({
+        billingStatus: expect.anything(),
+        cancelAtPeriodEnd: expect.anything(),
+      }),
+    }));
+    expect(mockPrisma.company.create.mock.calls[1][0].data.subscriptions.create).toEqual(
+      expect.not.objectContaining({
+        billingStatus: expect.anything(),
+        cancelAtPeriodEnd: expect.anything(),
+      })
+    );
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
   test('cleans created company data if an error happens after persistence', async () => {
     mockPrisma.company.create.mockResolvedValue({
       id: 'company-1',
